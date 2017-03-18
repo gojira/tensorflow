@@ -29,7 +29,7 @@
 # script to perform bazel clean prior to main build and test steps.
 #
 # TF_BUILD_INSTALL_EXTRA_PIP_PACKAGES overrides the default extra pip packages
-# to be installed in virtualenv before test_installation.sh is called. Multiple
+# to be installed in virtualenv before run_pip_tests.sh is called. Multiple
 # pakcage names are separated with spaces.
 #
 # If NO_TEST_ON_INSTALL has any non-empty and non-0 value, the test-on-install
@@ -165,6 +165,11 @@ if [[ $(echo ${WHL_PATH} | wc -w) -ne 1 ]]; then
 "directory: ${PIP_WHL_DIR}"
 fi
 
+# Print the size of the PIP wheel file.
+echo
+echo "Size of the PIP wheel file built: $(ls -l ${WHL_PATH} | awk '{print $5}')"
+echo
+
 # Rename the whl file properly so it will have the python
 # version tags and platform tags that won't cause pip install issues.
 if [[ $(uname) == "Linux" ]]; then
@@ -270,8 +275,8 @@ if [[ ! -z "${NO_TEST_ON_INSTALL}" ]] &&
   echo "NO_TEST_ON_INSTALL=${NO_TEST_ON_INSTALL}:"
   echo "  Skipping ALL Python unit tests on install"
 else
-  # Call test_installation.sh to perform test-on-install
-  "${SCRIPT_DIR}/test_installation.sh" --virtualenv ${GPU_FLAG} ${MAC_FLAG} ||
+  # Call run_pip_tests.sh to perform test-on-install
+  "${SCRIPT_DIR}/run_pip_tests.sh" --virtualenv ${GPU_FLAG} ${MAC_FLAG} ||
       die "PIP tests-on-install FAILED"
 fi
 

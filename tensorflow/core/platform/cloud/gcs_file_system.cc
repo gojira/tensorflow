@@ -341,7 +341,7 @@ class GcsWritableFile : public WritableFile {
                   std::ofstream::binary | std::ofstream::app);
   }
 
-  ~GcsWritableFile() { Close(); }
+  ~GcsWritableFile() override { Close().IgnoreError(); }
 
   Status Append(const StringPiece& data) override {
     TF_RETURN_IF_ERROR(CheckWritable());
@@ -411,22 +411,14 @@ class GcsWritableFile : public WritableFile {
           return UploadToSession(session_uri, already_uploaded);
         },
         initial_retry_delay_usec_);
-    switch (upload_status.code()) {
-      case errors::Code::OK:
-        return Status::OK();
-      case errors::Code::NOT_FOUND:
-        // GCS docs recommend retrying the whole upload. We're relying on the
-        // RetryingFileSystem to retry the Sync() call.
-        return errors::Unavailable("Could not upload gs://", bucket_, "/",
-                                   object_);
-      case errors::Code::UNAVAILABLE:
-        // Return ABORTED so that RetryingFileSystem doesn't retry again.
-        return errors::Aborted("Upload gs://", bucket_, "/", object_,
-                               " failed.");
-      default:
-        // Something unexpected happen, fail.
-        return upload_status;
+    if (upload_status.code() == errors::Code::NOT_FOUND) {
+      // GCS docs recommend retrying the whole upload. We're relying on the
+      // RetryingFileSystem to retry the Sync() call.
+      return errors::Unavailable(
+          strings::StrCat("Upload to gs://", bucket_, "/", object_,
+                          " failed, caused by: ", upload_status.ToString()));
     }
+    return upload_status;
   }
 
   Status CheckWritable() const {
@@ -771,8 +763,9 @@ Status GcsFileSystem::BucketExists(const string& bucket, bool* result) {
 
   std::unique_ptr<HttpRequest> request(http_request_factory_->Create());
   TF_RETURN_IF_ERROR(request->Init());
-  request->SetUri(strings::StrCat(kGcsUriBase, "b/", bucket));
-  request->AddAuthBearerHeader(auth_token);
+  TF_RETURN_IF_ERROR(
+      request->SetUri(strings::StrCat(kGcsUriBase, "b/", bucket)));
+  TF_RETURN_IF_ERROR(request->AddAuthBearerHeader(auth_token));
   const Status status = request->Send();
   switch (status.code()) {
     case errors::Code::OK:

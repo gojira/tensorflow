@@ -55,7 +55,7 @@ class RetryingWritableFile : public WritableFile {
 
   ~RetryingWritableFile() {
     // Makes sure the retrying version of Close() is called in the destructor.
-    Close();
+    Close().IgnoreError();
   }
 
   Status Append(const StringPiece& data) override {
