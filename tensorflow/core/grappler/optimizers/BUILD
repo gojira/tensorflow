@@ -1,7 +1,5 @@
 licenses(["notice"])  # Apache 2.0
 
-exports_files(["LICENSE"])
-
 filegroup(
     name = "all_files",
     srcs = glob(
@@ -12,6 +10,32 @@ filegroup(
         ],
     ),
     visibility = ["//tensorflow:__subpackages__"],
+)
+
+filegroup(
+    name = "android_srcs",
+    srcs = glob(
+        [
+            "*_optimizer.*",
+            "model_pruner.*",
+            "graph_rewriter.*",
+        ],
+    ),
+    visibility = ["//tensorflow:__subpackages__"],
+)
+
+cc_library(
+    name = "graph_rewriter",
+    srcs = ["graph_rewriter.cc"],
+    hdrs = [
+        "graph_rewriter.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/grappler:grappler_item",
+        "//tensorflow/core/grappler:utils",
+    ],
 )
 
 cc_library(
@@ -27,6 +51,37 @@ cc_library(
 )
 
 cc_library(
+    name = "model_pruner",
+    srcs = ["model_pruner.cc"],
+    hdrs = [
+        "model_pruner.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":graph_optimizer",
+        ":graph_rewriter",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/grappler:grappler_item",
+        "//tensorflow/core/grappler:utils",
+    ],
+)
+
+cc_test(
+    name = "model_pruner_test",
+    srcs = ["model_pruner_test.cc"],
+    deps = [
+        ":model_pruner",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/grappler:grappler_item",
+        "//tensorflow/core/grappler:utils",
+        "//tensorflow/core/grappler/inputs:trivial_test_graph_input_yielder",
+    ],
+)
+
+cc_library(
     name = "layout_optimizer",
     srcs = ["layout_optimizer.cc"],
     hdrs = [
@@ -38,8 +93,26 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/grappler:devices",
         "//tensorflow/core/grappler:grappler_item",
         "//tensorflow/core/grappler:utils",
         "//tensorflow/core/grappler/clusters:cluster",
+    ],
+)
+
+cc_library(
+    name = "meta_optimizer",
+    srcs = ["meta_optimizer.cc"],
+    hdrs = [
+        "meta_optimizer.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":graph_optimizer",
+        ":layout_optimizer",
+        ":model_pruner",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/grappler:grappler_item",
     ],
 )

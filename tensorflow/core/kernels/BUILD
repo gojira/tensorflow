@@ -17,10 +17,7 @@ licenses(["notice"])  # Apache 2.0
 
 package_group(
     name = "friends",
-    packages = [
-        "//learning/deepmind/...",
-        "//tensorflow/...",
-    ],
+    packages = ["//tensorflow/..."],
 )
 
 load(
@@ -368,17 +365,17 @@ cc_library(
     ],
 )
 
-# Private support libraries ---------------------------------------------------
-
 cc_library(
     name = "bounds_check",
     hdrs = ["bounds_check.h"],
-    visibility = ["//tensorflow:__subpackages__"],
+    visibility = [":friends"],
     deps = [
         "//tensorflow/core:framework_lite",
         "//third_party/eigen3",
     ],
 )
+
+# Private support libraries ---------------------------------------------------
 
 cc_header_only_library(
     name = "bounds_check_lib",
@@ -405,10 +402,10 @@ cc_library(
         "eigen_backward_cuboid_convolutions.h",
         "eigen_backward_spatial_convolutions.h",
         "eigen_cuboid_convolution.h",
-        "eigen_patch_3d.h",
         "eigen_pooling.h",
         "eigen_softmax.h",
         "eigen_spatial_convolutions.h",
+        "eigen_volume_patch.h",
     ],
     deps = [
         "//third_party/eigen3",
@@ -1108,9 +1105,23 @@ tf_kernel_library(
     visibility = ["//visibility:private"],
     deps = [
         "//tensorflow/core:framework",
+        "//tensorflow/core/kernels:conv_ops",
         "//third_party/eigen3",
     ],
     alwayslink = 0,
+)
+
+tf_cc_test(
+    name = "transpose_util_test",
+    size = "small",
+    srcs = ["transpose_util_test.cc"],
+    deps = [
+        ":transpose_functor",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:tensor_testutil",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+    ],
 )
 
 tf_kernel_library(
@@ -2689,6 +2700,7 @@ tf_kernel_library(
         "cudnn_pooling_gpu.h",
         "fractional_pool_common.h",
         "maxpooling_op.h",
+        "pooling_ops_3d.h",
         "pooling_ops_common.h",
     ],
     gpu_srcs = [
@@ -2699,6 +2711,8 @@ tf_kernel_library(
         "maxpooling_op_gpu.h",
         "pooling_ops_common.h",
         "pooling_ops_common_gpu.h",
+        "pooling_ops_3d_gpu.h",
+        "pooling_ops_3d_gpu.cu.cc",
     ],
     deps = [
         ":conv_2d",
@@ -3463,10 +3477,10 @@ filegroup(
         "eigen_backward_cuboid_convolutions.h",
         "eigen_backward_spatial_convolutions.h",
         "eigen_cuboid_convolution.h",
-        "eigen_patch_3d.h",
         "eigen_pooling.h",
         "eigen_softmax.h",
         "eigen_spatial_convolutions.h",
+        "eigen_volume_patch.h",
         "fifo_queue.h",
         "maxpooling_op.h",
         "ops_util.cc",
@@ -3756,6 +3770,7 @@ filegroup(
         "spacetodepth_op.cc",
         "sparse_to_dense_op.cc",
         "stack_ops.cc",
+        "string_join_op.cc",
         "summary_op.cc",
         "tensor_array.cc",
         "tensor_array_ops.cc",
