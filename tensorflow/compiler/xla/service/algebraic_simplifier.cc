@@ -146,6 +146,8 @@ class AlgebraicSimplifierVisitor : public DfsHloVisitorWithDefault {
                       tensorflow::gtl::ArraySlice<int64> dimensions,
                       HloComputation* function) override;
 
+  Status HandleReverse(HloInstruction* reverse,
+                       HloInstruction* operand) override;
   Status HandleSlice(HloInstruction* slice, HloInstruction* operand) override;
 
   Status HandleTranspose(HloInstruction* transpose) override;
@@ -1012,6 +1014,21 @@ Status AlgebraicSimplifierVisitor::HandleReshape(HloInstruction* reshape) {
   return Status::OK();
 }
 
+Status AlgebraicSimplifierVisitor::HandleReverse(HloInstruction* reverse,
+                                                 HloInstruction* operand) {
+  // When all the dimensions to reverse are trivial (i.e. the bound is 1), there
+  // is nothing to be done.
+  auto dim_is_one = [&](int64 i) -> bool {
+    return reverse->shape().dimensions(i) == 1;
+  };
+  if (std::all_of(reverse->dimensions().begin(), reverse->dimensions().end(),
+                  dim_is_one)) {
+    changed_ = true;
+    return computation_->ReplaceInstruction(reverse, operand);
+  }
+  return Status::OK();
+}
+
 Status AlgebraicSimplifierVisitor::HandleSlice(HloInstruction* slice,
                                                HloInstruction* operand) {
   // Delete no-op slices, i.e. where shape = operand shape.
@@ -1331,13 +1348,14 @@ Status AlgebraicSimplifierVisitor::HandleMinimum(HloInstruction* minimum,
 StatusOr<bool> AlgebraicSimplifier::Run(HloModule* module) {
   XLA_VLOG_LINES(2,
                  "AlgebraicSimplifier::Run(), before:\n" + module->ToString());
-  bool changed =
-      std::any_of(module->computations().begin(), module->computations().end(),
-                  [=](const std::unique_ptr<HloComputation>& computation) {
-                    return AlgebraicSimplifierVisitor::Run(
-                        computation.get(), is_layout_sensitive_,
-                        valid_bitcast_callback_, enable_dot_simplification_);
-                  });
+  bool changed = false;
+  for (auto& comp : module->computations()) {
+    if (AlgebraicSimplifierVisitor::Run(comp.get(), is_layout_sensitive_,
+                                        valid_bitcast_callback_,
+                                        enable_dot_simplification_)) {
+      changed = true;
+    }
+  }
   XLA_VLOG_LINES(2,
                  "AlgebraicSimplifier::Run(), after:\n" + module->ToString());
   return changed;
