@@ -96,6 +96,17 @@ cuda_py_test(
 )
 
 tf_py_test(
+    name = "bincount_op_test",
+    size = "small",
+    srcs = ["bincount_op_test.py"],
+    additional_deps = [
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:framework_for_generated_wrappers",
+    ],
+)
+
+tf_py_test(
     name = "candidate_sampler_ops_test",
     size = "small",
     srcs = ["candidate_sampler_ops_test.py"],
@@ -540,7 +551,7 @@ tf_py_test(
     ],
 )
 
-tf_py_test(
+cuda_py_test(
     name = "resource_variable_ops_test",
     size = "small",
     srcs = ["resource_variable_ops_test.py"],
@@ -927,6 +938,19 @@ tf_py_test(
         "//tensorflow/python:lib",
         "//tensorflow/python:util",
         "//tensorflow/python:variables",
+    ],
+)
+
+cuda_py_test(
+    name = "aggregate_ops_test",
+    size = "small",
+    srcs = ["aggregate_ops_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:math_ops",
     ],
 )
 
@@ -1567,9 +1591,9 @@ cuda_py_test(
 )
 
 cuda_py_test(
-    name = "scalar_strict_test",
+    name = "scalar_test",
     size = "small",
-    srcs = ["scalar_strict_test.py"],
+    srcs = ["scalar_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
@@ -1763,7 +1787,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "split_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["split_op_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
@@ -1875,7 +1899,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "transpose_op_test",
-    size = "small",
+    size = "large",
     srcs = ["transpose_op_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
@@ -2072,7 +2096,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "pooling_ops_3d_test",
-    size = "medium",  # http://b/30600785
+    size = "medium",
     srcs = ["pooling_ops_3d_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
@@ -2098,6 +2122,7 @@ cuda_py_test(
         "//tensorflow/python:nn_ops",
         "//tensorflow/python:nn_ops_gen",
     ],
+    shard_count = 4,
 )
 
 cuda_py_test(
@@ -2113,6 +2138,7 @@ cuda_py_test(
         "//tensorflow/python:platform",
         "//tensorflow/python:random_ops",
     ],
+    shard_count = 4,
 )
 
 cuda_py_test(

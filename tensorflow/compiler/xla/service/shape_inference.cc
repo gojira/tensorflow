@@ -633,26 +633,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(
   TF_DCHECK_OK(ShapeUtil::ValidateShape(ehs));
   switch (operation) {
     case TRIOP_CLAMP:
-      TF_RETURN_IF_ERROR(
-          ExpectNotTupleOrOpaque(lhs, "lhs of ternary operation"));
-      TF_RETURN_IF_ERROR(
-          ExpectNotTupleOrOpaque(rhs, "rhs of ternary operation"));
-      TF_RETURN_IF_ERROR(
-          ExpectNotTupleOrOpaque(ehs, "ehs of ternary operation"));
-      if (((ShapeUtil::Compatible(lhs, rhs) || ShapeUtil::Rank(lhs) == 0) &&
-           (ShapeUtil::Compatible(rhs, ehs) || ShapeUtil::Rank(ehs) == 0))) {
-        return rhs;
-      }
-      if (ShapeUtil::Rank(rhs) == 0) {
-        if (ShapeUtil::Compatible(lhs, ehs)) {
-          return lhs;
-        }
-        return ShapeUtil::Rank(ehs) == 0 ? lhs : ehs;
-      }
-      return Unimplemented("not yet implemented: %s, %s <clamp> %s",
-                           lhs.ShortDebugString().c_str(),
-                           ehs.ShortDebugString().c_str(),
-                           rhs.ShortDebugString().c_str());
+      return InferClampShape(lhs, rhs, ehs);
     case TRIOP_SELECT:
       return InferSelectShape(lhs, rhs, ehs);
     case TRIOP_UPDATE:
@@ -1037,8 +1018,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(
   }
 
   std::vector<int64> sizes;
-  for (tensorflow::gtl::ArraySlice<int64>::size_type dimension = 0;
-       dimension < starts.size(); ++dimension) {
+  for (int64 dimension = 0; dimension < starts.size(); ++dimension) {
     int64 start_index = starts[dimension];
     int64 limit_index = limits[dimension];
     if (start_index < 0) {
@@ -1111,8 +1091,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(
         slice_sizes.size(), ShapeUtil::Rank(operand_shape));
   }
 
-  for (tensorflow::gtl::ArraySlice<int64>::size_type dim = 0;
-       dim < slice_sizes.size(); ++dim) {
+  for (int64 dim = 0; dim < slice_sizes.size(); ++dim) {
     const int64 input_dim_size = operand_shape.dimensions(dim);
     const int64 slice_dim_size = slice_sizes[dim];
     if (slice_dim_size <= 0) {
@@ -1334,6 +1313,41 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(
   return ShapeUtil::PermuteDimensions(InversePermutation(dimensions), operand);
 }
 
+// TODO(b/36794510): Make broadcast semantics more consistent, by supporting
+// "degenerate" cases, as with binary elementwise ops.
+/* static */ StatusOr<Shape> ShapeInference::InferClampShape(
+    const Shape& min, const Shape& operand, const Shape& max) {
+  TF_RETURN_IF_ERROR(ExpectNotTupleOrOpaque(min, "clamp min"));
+  TF_RETURN_IF_ERROR(ExpectNotTupleOrOpaque(operand, "clamp operand"));
+  TF_RETURN_IF_ERROR(ExpectNotTupleOrOpaque(max, "clamp max"));
+  if (!ShapeUtil::SameElementType(min, operand) ||
+      !ShapeUtil::SameElementType(max, operand)) {
+    return InvalidArgument("clamp op with different operand types: %s, %s, %s",
+                           ShapeUtil::HumanString(min).c_str(),
+                           ShapeUtil::HumanString(operand).c_str(),
+                           ShapeUtil::HumanString(max).c_str());
+  }
+  if (((ShapeUtil::Compatible(min, operand) || ShapeUtil::IsScalar(min)) &&
+       (ShapeUtil::Compatible(max, operand) || ShapeUtil::IsScalar(max)))) {
+    return operand;
+  }
+  if (ShapeUtil::IsScalar(operand)) {
+    if (ShapeUtil::Compatible(min, max)) {
+      return min;
+    } else if (ShapeUtil::IsScalar(min)) {
+      return max;
+    } else if (ShapeUtil::IsScalar(max)) {
+      return min;
+    }
+  }
+  return Unimplemented(
+      "not yet implemented: %s, %s <clamp> %s", min.ShortDebugString().c_str(),
+      max.ShortDebugString().c_str(), operand.ShortDebugString().c_str());
+}
+
+// TODO(b/36794510): Make broadcast semantics more consistent, by supporting
+// "degenerate" cases, as with binary elementwise ops, as well as scalar
+// broadcast from all operands, not just the predicate.
 /* static */ StatusOr<Shape> ShapeInference::InferSelectShape(
     const Shape& pred, const Shape& on_true, const Shape& on_false) {
   if (!ShapeUtil::Compatible(on_true, on_false)) {
@@ -1372,8 +1386,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(
   }
 
   // All arguments must be compatible with the program shape.
-  for (tensorflow::gtl::ArraySlice<const Shape*>::size_type i = 0;
-       i < arg_shapes.size(); ++i) {
+  for (int i = 0; i < arg_shapes.size(); ++i) {
     const Shape& arg_shape = *arg_shapes[i];
     const Shape& param_shape = to_apply.parameters(i);
     if (!ShapeUtil::Compatible(arg_shape, param_shape)) {

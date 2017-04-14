@@ -99,10 +99,10 @@ individual slices can optionally be adjointed (to adjoint a matrix
 means to transpose and conjugate it) before multiplication by setting
 the `adj_x` or `adj_y` flag to `True`, which are by default `False`.
 
-The input tensors `x` and `y` are 3-D or higher with shape `[..., r_x, c_x]`
+The input tensors `x` and `y` are 2-D or higher with shape `[..., r_x, c_x]`
 and `[..., r_y, c_y]`.
 
-The output tensor is 3-D or higher with shape `[..., r_o, c_o]`, where:
+The output tensor is 2-D or higher with shape `[..., r_o, c_o]`, where:
 
     r_o = c_x if adj_x else r_x
     c_o = r_y if adj_y else c_y
@@ -111,8 +111,8 @@ It is computed as:
 
     output[..., :, :] = matrix(x[..., :, :]) * matrix(y[..., :, :])
 
-x: 3-D or higher with shape `[..., r_x, c_x]`.
-y: 3-D or higher with shape `[..., r_y, c_y]`.
+x: 2-D or higher with shape `[..., r_x, c_x]`.
+y: 2-D or higher with shape `[..., r_y, c_y]`.
 output: 3-D or higher with shape `[..., r_o, c_o]`
 adj_x: If `True`, adjoint the slices of `x`. Defaults to `False`.
 adj_y: If `True`, adjoint the slices of `y`. Defaults to `False`.
@@ -2055,6 +2055,38 @@ product: Pairwise cross product of the vectors in `a` and `b`.
 )doc");
 
 // --------------------------------------------------------------------------
+
+REGISTER_OP("Bincount")
+    .Input("arr: int32")
+    .Input("size: int32")
+    .Input("weights: T")
+    .Attr("T: {int32, int64, float32, float64}")
+    .Output("bins: T")
+    .SetShapeFn([](InferenceContext* c) {
+      c->set_output(0, c->UnknownShapeOfRank(1));
+      c->set_output_handle_dtype(0, c->input_handle_dtype(2));
+      return Status::OK();
+    })
+    .Doc(R"doc(
+Counts the number of occurrences of each value in an integer array.
+
+Outputs a vector with length `size` and the same dtype as `weights`. If
+`weights` are empty, then index `i` stores the number of times the value `i` is
+counted in `arr`. If `weights` are non-empty, then index `i` stores the sum of
+the value in `weights` at each index where the corresponding value in `arr` is
+`i`.
+
+Values in `arr` outside of the range [0, size) are ignored.
+
+arr: int32 `Tensor`.
+size: non-negative int32 scalar `Tensor`.
+weights: is an int32, int64, float32, or float64 `Tensor` with the same
+    shape as `arr`, or a length-0 `Tensor`, in which case it acts as all weights
+    equal to 1.
+
+bins: 1D `Tensor` with length equal to `size`. The counts or summed weights for
+    each value in the range [0, size).
+)doc");
 
 REGISTER_OP("Cumsum")
     .Input("x: T")

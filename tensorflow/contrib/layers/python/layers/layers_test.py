@@ -1465,6 +1465,30 @@ class PartialFlattenTest(test.TestCase):
     flattened5 = _layers._inner_flatten(inputs, 5)
     self.assertEqual([2, None, 4, None, 30], flattened5.get_shape().as_list())
 
+  def testDenseFlattenRankAssertion(self):
+    """Test `_inner_flatten` rank assertion for dense tensors."""
+    shape = [2, 3]
+    new_rank = 3
+    inputs = array_ops.placeholder(dtypes.int32)
+    inputs.set_shape(shape)
+
+    with self.assertRaisesRegexp(ValueError,
+                                 'inputs has rank less than new_rank'):
+      _layers._inner_flatten(inputs, new_rank)
+
+  def testSparseFlattenRankAssertion(self):
+    """Test `_inner_flatten` rank assertion for sparse tensors."""
+    shape = [2, 3]
+    new_rank = 3
+    np.random.seed(10301)
+    random_ = np.random.rand(*shape)
+    indices, values, _ = _sparsify(random_)
+    inputs = sparse_tensor.SparseTensor(indices, values, shape)
+
+    with self.assertRaisesRegexp(ValueError,
+                                 'Inputs has rank less than new_rank'):
+      _layers._inner_flatten(inputs, new_rank)
+
 
 class FCTest(test.TestCase):
 
@@ -1682,7 +1706,8 @@ class BatchNormTest(test.TestCase):
   def testParamRegularizersFused(self):
     with ops.Graph().as_default() as g, self.test_session(g):
       inputs = array_ops.placeholder(dtype=dtypes.float32, shape=(5, 3, 3, 7))
-      with self.assertRaisesRegexp(ValueError, 'Regularizers are not currently'):
+      with self.assertRaisesRegexp(ValueError,
+                                   'Regularizers are not currently'):
         _layers.batch_norm(inputs, param_regularizers={}, fused=True)
 
   def _testCreateOp(self, fused):
@@ -1708,27 +1733,23 @@ class BatchNormTest(test.TestCase):
     with self.test_session():
       reg = lambda x: 0.1 * math_ops.reduce_sum(x)
       images = np.random.uniform(size=(5, height, width, 3)).astype('f')
-      output = _layers.batch_norm(images, param_regularizers={'beta': reg})
+      _layers.batch_norm(images, param_regularizers={'beta': reg})
       self.assertEqual(
           len(ops.get_collection(ops.GraphKeys.REGULARIZATION_LOSSES)), 1)
       beta_decay = ops.get_collection(ops.GraphKeys.REGULARIZATION_LOSSES)[0]
-      self.assertEqual(
-          beta_decay.op.name,
-          'BatchNorm/beta/Regularizer/mul')
+      self.assertEqual(beta_decay.op.name, 'BatchNorm/beta/Regularizer/mul')
 
   def testCreateOpGammaRegularizer(self):
     height, width = 3, 3
     with self.test_session():
       reg = lambda x: 0.1 * math_ops.reduce_sum(x)
       images = np.random.uniform(size=(5, height, width, 3)).astype('f')
-      output = _layers.batch_norm(
-        images, param_regularizers={'gamma': reg}, scale=True)
+      _layers.batch_norm(
+          images, param_regularizers={'gamma': reg}, scale=True)
       self.assertEqual(
           len(ops.get_collection(ops.GraphKeys.REGULARIZATION_LOSSES)), 1)
       gamma_decay = ops.get_collection(ops.GraphKeys.REGULARIZATION_LOSSES)[0]
-      self.assertEqual(
-          gamma_decay.op.name,
-          'BatchNorm/gamma/Regularizer/mul')
+      self.assertEqual(gamma_decay.op.name, 'BatchNorm/gamma/Regularizer/mul')
 
   def testCreateVariables(self):
     height, width = 3, 3
@@ -2981,6 +3002,36 @@ class SeparableConv2dTest(test.TestCase):
       images = np.random.rand(5, height, width, 3)
       sess.run(init_op)
       sess.run(net, feed_dict={images_placeholder: images})
+
+  def testTrainableFlagIsPassedOn(self):
+    for trainable in [True, False]:
+      for num_filters in [None, 8]:
+        with ops.Graph().as_default():
+          input_size = [5, 10, 12, 3]
+
+          images = random_ops.random_uniform(input_size, seed=1)
+          layers_lib.separable_conv2d(
+              images, num_filters, [3, 3], 1, trainable=trainable)
+          model_variables = variables.get_model_variables()
+          trainable_variables = variables_lib.trainable_variables()
+          for model_variable in model_variables:
+            self.assertEqual(trainable, model_variable in trainable_variables)
+
+
+class ScaleGradientTests(test.TestCase):
+  """Simple tests of the scale_gradient function."""
+
+  def testBasic(self):
+    with self.test_session():
+      x = np.array([42], np.float32)
+      gradient_scale = np.array([2], np.float32)
+
+      x = ops.convert_to_tensor(x)
+      y = layers_lib.scale_gradient(x, gradient_scale)
+
+      np.testing.assert_array_equal(x.eval(), y.eval())
+      g_x, = gradients_impl.gradients(y, [x], [np.array([3], np.float32)])
+      np.testing.assert_array_equal([3 * 2], g_x.eval())
 
 
 class SoftmaxTests(test.TestCase):

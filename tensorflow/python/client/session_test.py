@@ -193,6 +193,12 @@ class SessionTest(test_util.TensorFlowTestCase):
       self.assertEqual(42.0, res)
       res = sess.run(a.op)  # An op, not a tensor.
       self.assertEqual(None, res)
+      tensor_runner = sess.make_callable(a)
+      res = tensor_runner()
+      self.assertEqual(42.0, res)
+      op_runner = sess.make_callable(a.op)
+      res = op_runner()
+      self.assertEqual(None, res)
 
   def testFetchSingletonByName(self):
     with session.Session() as sess:
@@ -211,12 +217,11 @@ class SessionTest(test_util.TensorFlowTestCase):
       assign = v.assign([63.0])
       res = sess.run([a, b, c, a.name, assign.op])
       self.assertTrue(isinstance(res, list))
-      self.assertEqual(42.0, res[0])
-      self.assertEqual(None, res[1])
-      self.assertEqual(44.0, res[2])
-      self.assertEqual(42.0, res[3])
-      self.assertEqual(None, res[4])
-      self.assertEqual(63.0, sess.run(v))
+      self.assertEqual([42.0, None, 44.0, 42.0, None], res)
+      list_runner = sess.make_callable([a, b, c, a.name, assign.op])
+      res = list_runner()
+      self.assertTrue(isinstance(res, list))
+      self.assertEqual([42.0, None, 44.0, 42.0, None], res)
 
   def testFetchTuple(self):
     with session.Session() as sess:
@@ -225,10 +230,11 @@ class SessionTest(test_util.TensorFlowTestCase):
       c = constant_op.constant(44.0)
       res = sess.run((a, b, c, a.name))
       self.assertTrue(isinstance(res, tuple))
-      self.assertEqual(42.0, res[0])
-      self.assertEqual(None, res[1])
-      self.assertEqual(44.0, res[2])
-      self.assertEqual(42.0, res[3])
+      self.assertEqual((42.0, None, 44.0, 42.0), res)
+      tuple_runner = sess.make_callable((a, b, c, a.name))
+      res = tuple_runner()
+      self.assertTrue(isinstance(res, tuple))
+      self.assertEqual((42.0, None, 44.0, 42.0), res)
 
   def testFetchNamedTuple(self):
     # pylint: disable=invalid-name
@@ -239,6 +245,12 @@ class SessionTest(test_util.TensorFlowTestCase):
       b = control_flow_ops.no_op()  # An op, not a tensor.
       c = constant_op.constant(44.0)
       res = sess.run(ABC(a, b, c))
+      self.assertTrue(isinstance(res, ABC))
+      self.assertEqual(42.0, res.a)
+      self.assertEqual(None, res.b)
+      self.assertEqual(44.0, res.c)
+      namedtuple_runner = sess.make_callable(ABC(a, b, c))
+      res = namedtuple_runner()
       self.assertTrue(isinstance(res, ABC))
       self.assertEqual(42.0, res.a)
       self.assertEqual(None, res.b)
@@ -1181,6 +1193,11 @@ class SessionTest(test_util.TensorFlowTestCase):
           self.assertAllEqual(np_array, out_v)
           self.assertAllEqual(np_array, feed_v)
 
+          feed_fetch_runner = sess.make_callable([out_t, feed_t], [feed_t])
+          out_v, feed_v = feed_fetch_runner(np_array)
+          self.assertAllEqual(np_array, out_v)
+          self.assertAllEqual(np_array, feed_v)
+
   def testFeedError(self):
     with session.Session() as sess:
       feed_t = array_ops.placeholder(dtype=dtypes.float32)
@@ -1404,6 +1421,14 @@ class SessionTest(test_util.TensorFlowTestCase):
     r2 = sess.partial_run(h, [b, c])
     self.assertEqual(r1, r2)
 
+  def runTestPartialRunMissingPlaceholderFeedException(self, sess):
+    x = array_ops.placeholder(dtypes.float32, shape=())
+    fetches = [x * 2, x * 3]
+    handle = sess.partial_run_setup(fetches=fetches, feeds=[])
+    with self.assertRaisesRegexp(errors.InvalidArgumentError,
+                                 'You must feed a value for placeholder'):
+      sess.partial_run(handle, fetches[0])
+
   def testPartialRunDirect(self):
     self.runTestPartialRun(session.Session())
 
@@ -1418,6 +1443,9 @@ class SessionTest(test_util.TensorFlowTestCase):
 
   def testRunAndPartialRunDirect(self):
     self.runTestRunAndPartialRun(session.Session())
+
+  def testPartialRunMissingPlaceholderFeedExceptionDirect(self):
+    self.runTestPartialRunMissingPlaceholderFeedException(session.Session())
 
   def testPartialRunDist(self):
     server = server_lib.Server.create_local_server()
@@ -1438,6 +1466,11 @@ class SessionTest(test_util.TensorFlowTestCase):
   def testRunAndPartialRunDist(self):
     server = server_lib.Server.create_local_server()
     self.runTestRunAndPartialRun(session.Session(server.target))
+
+  def testPartialRunMissingPlaceholderFeedExceptionDist(self):
+    server = server_lib.Server.create_local_server()
+    self.runTestPartialRunMissingPlaceholderFeedException(
+        session.Session(server.target))
 
   def testFeedDictKeyException(self):
     with session.Session() as sess:

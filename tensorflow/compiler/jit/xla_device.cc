@@ -56,7 +56,6 @@ namespace tensorflow {
 
   // These are no-ops if they have already been done previously for
   // this device_name/compilation_device_name pair.
-  XlaOpRegistry::RegisterCompilationKernels();
   XlaOpRegistry::DeviceRegistration registration;
   registration.compilation_device_name = jit_device_name;
   registration.requires_compilation = true;
@@ -108,6 +107,17 @@ const DeviceType& XlaDevice::Metadata::jit_device_type() const {
 }
 
 string XlaDevice::Metadata::DebugString() { return "XLA device metadata"; }
+
+/* static */ Status XlaDevice::GetMetadata(OpKernelContext* ctx,
+                                           Metadata** metadata) {
+  ResourceMgr* rm = ctx->resource_manager();
+  if (rm == nullptr) {
+    return errors::Internal("No resource manager.");
+  }
+  TF_RETURN_IF_ERROR(
+      rm->Lookup<Metadata>(rm->default_container(), "xla_metadata", metadata));
+  return Status::OK();
+}
 
 XlaDevice::XlaDevice(const SessionOptions& options,
                      const DeviceAttributes& attrs, int device_ordinal,
@@ -206,6 +216,7 @@ Status XlaDevice::MakeTensorFromProto(const TensorProto& tensor_proto,
 
 XlaDeviceOpRegistrations* RegisterXlaDeviceKernels(const char* device,
                                                    const char* jit_device) {
+  XlaOpRegistry::RegisterCompilationKernels();
   XlaDeviceOpRegistrations* registrations = new XlaDeviceOpRegistrations;
   auto dummy_factory = [](OpKernelConstruction* context) -> OpKernel* {
     return new XlaDeviceDummyOp(context);

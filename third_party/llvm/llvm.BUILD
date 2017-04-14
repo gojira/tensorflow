@@ -151,6 +151,11 @@ all_cmake_vars = select({
         cmake_vars + llvm_target_cmake_vars("X86", "x86_64-apple-darwin") +
         darwin_cmake_vars,
     ),
+    "@%ws%//tensorflow:linux_ppc64le": cmake_var_string(
+        cmake_vars +
+        llvm_target_cmake_vars("PowerPC", "powerpc64le-unknown-linux_gnu") +
+        linux_cmake_vars,
+    ),
     "//conditions:default": cmake_var_string(
         cmake_vars +
         llvm_target_cmake_vars("X86", "x86_64-unknown-linux_gnu") +
@@ -408,8 +413,10 @@ llvm_target_list = [
             ("-gen-asm-matcher", "lib/Target/X86/X86GenAsmMatcher.inc"),
             ("-gen-dag-isel", "lib/Target/X86/X86GenDAGISel.inc"),
             ("-gen-fast-isel", "lib/Target/X86/X86GenFastISel.inc"),
+            ("-gen-global-isel", "lib/Target/X86/X86GenGlobalISel.inc"),
             ("-gen-callingconv", "lib/Target/X86/X86GenCallingConv.inc"),
             ("-gen-subtarget", "lib/Target/X86/X86GenSubtargetInfo.inc"),
+            ("-gen-x86-EVEX2VEX-tables", "lib/Target/X86/X86GenEVEX2VEXTables.inc"),
         ],
     },
 ]

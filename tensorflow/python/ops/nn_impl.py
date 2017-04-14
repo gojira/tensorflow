@@ -182,12 +182,13 @@ def weighted_cross_entropy_with_logits(targets, logits, pos_weight, name=None):
 
   The usual cross-entropy cost is defined as:
 
-    targets * -log(sigmoid(logits)) + (1 - targets) * -log(1 - sigmoid(logits))
+      targets * -log(sigmoid(logits)) +
+          (1 - targets) * -log(1 - sigmoid(logits))
 
   The argument `pos_weight` is used as a multiplier for the positive targets:
 
-    targets * -log(sigmoid(logits)) * pos_weight +
-        (1 - targets) * -log(1 - sigmoid(logits))
+      targets * -log(sigmoid(logits)) * pos_weight +
+          (1 - targets) * -log(1 - sigmoid(logits))
 
   For brevity, let `x = logits`, `z = targets`, `q = pos_weight`.
   The loss is:
@@ -919,7 +920,8 @@ def _compute_sampled_logits(weights,
     weights: A `Tensor` of shape `[num_classes, dim]`, or a list of `Tensor`
         objects whose concatenation along dimension 0 has shape
         `[num_classes, dim]`.  The (possibly-partitioned) class embeddings.
-    biases: A `Tensor` of shape `[num_classes]`.  The class biases.
+    biases: A `Tensor` of shape `[num_classes]`.  The (possibly-partitioned)
+        class biases.
     labels: A `Tensor` of type `int64` and shape `[batch_size,
         num_true]`. The target classes.  Note that this format differs from
         the `labels` argument of `nn.softmax_cross_entropy_with_logits`.
@@ -984,7 +986,8 @@ def _compute_sampled_logits(weights,
     # weights shape is [num_classes, dim]
     all_w = embedding_ops.embedding_lookup(
         weights, all_ids, partition_strategy=partition_strategy)
-    all_b = embedding_ops.embedding_lookup(biases, all_ids)
+    all_b = embedding_ops.embedding_lookup(
+        biases, all_ids, partition_strategy=partition_strategy)
     # true_w shape is [batch_size * num_true, dim]
     # true_b is a [batch_size * num_true] tensor
     true_w = array_ops.slice(

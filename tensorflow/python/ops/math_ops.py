@@ -112,6 +112,7 @@ See the @{$python/math_ops} guide.
 @@count_nonzero
 @@accumulate_n
 @@einsum
+@@bincount
 @@cumsum
 @@cumprod
 @@segment_sum
@@ -203,7 +204,7 @@ argmin.__doc__ = (gen_math_ops.arg_min.__doc__.replace("dimensions",
 # pylint: disable=anomalous-backslash-in-string,protected-access
 # pylint: disable=g-docstring-has-escape
 def abs(x, name=None):
-  """Computes the absolute value of a tensor.
+  r"""Computes the absolute value of a tensor.
 
   Given a tensor of real numbers `x`, this operation returns a tensor
   containing the absolute value of each element in `x`. For example, if x is
@@ -362,7 +363,9 @@ def _neg(x, name=None):
 def sign(x, name=None):
   """Returns an element-wise indication of the sign of a number.
 
-  `y = sign(x) = -1` if `x < 0`; 0 if `x == 0`; 1 if `x > 0`.
+  `y = sign(x) = -1` if `x < 0`; 0 if `x == 0` or `tf.is_nan(x)`; 1 if `x > 0`.
+
+  Zero is returned for NaN inputs.
 
   For complex numbers, `y = sign(x) = x / |x|` if `x != 0`, otherwise `y = 0`.
 
@@ -373,6 +376,10 @@ def sign(x, name=None):
 
   Returns:
     A `Tensor` or `SparseTensor`, respectively. Has the same type as `x`.
+
+  @compatibility(numpy)
+  Equivalent to numpy.sign except for the behaviour for input values of NaN.
+  @end_compatibility
   """
   with ops.name_scope(name, "Sign", [x]) as name:
     if isinstance(x, sparse_tensor.SparseTensor):
@@ -384,7 +391,7 @@ def sign(x, name=None):
 
 
 def square(x, name=None):
-  """Computes square of x element-wise.
+  r"""Computes square of x element-wise.
 
   I.e., \\(y = x * x = x^2\\).
 
@@ -406,7 +413,7 @@ def square(x, name=None):
 
 
 def sqrt(x, name=None):
-  """Computes square root of x element-wise.
+  r"""Computes square root of x element-wise.
 
   I.e., \\(y = \sqrt{x} = x^{1/2}\\).
 
@@ -477,7 +484,7 @@ def scalar_mul(scalar, x):
 
 
 def pow(x, y, name=None):
-  """Computes the power of one value to another.
+  r"""Computes the power of one value to another.
 
   Given a tensor `x` and a tensor `y`, this operation computes \\\\(x^y\\\\) for
   corresponding elements in `x` and `y`. For example:
@@ -577,7 +584,7 @@ def real(input, name=None):
 
 
 def imag(input, name=None):
-  """Returns the imaginary part of a complex number.
+  r"""Returns the imaginary part of a complex number.
 
   Given a tensor `input` of complex numbers, this operation returns a tensor of
   type `float32` or `float64` that is the imaginary part of each element in
@@ -1601,7 +1608,7 @@ def reduce_logsumexp(input_tensor,
 
 
 def trace(x, name=None):
-  """ Compute the trace of a tensor `x`.
+  """Compute the trace of a tensor `x`.
 
   `trace(x)` returns the sum along the main diagonal of each inner-most matrix
   in x. If x is of rank `k` with shape `[I, J, K, ..., L, M, N]`, then output
@@ -2018,6 +2025,50 @@ def tanh(x, name=None):
       return gen_math_ops._tanh(x, name=name)
 
 
+def bincount(arr,
+             minlength=None,
+             maxlength=None,
+             weights=None,
+             dtype=dtypes.int32):
+  """Counts the number of occurrences of each value in an integer array.
+
+  If `minlength` and `maxlength` are not given, returns a vector with length
+  `tf.reduce_max(arr) + 1` if `arr` is non-empty, and length 0 otherwise.
+  If `weights` are non-None, then index `i` of the output stores the sum of the
+  value in `weights` at each index where the corresponding value in `arr` is
+  `i`.
+
+  Args:
+    arr: An int32 tensor of non-negative values.
+    minlength: If given, ensures the output has length at least `minlength`,
+        padding with zeros at the end if necessary.
+    maxlength: If given, skips values in `arr` that are equal or greater than
+        `maxlength`, ensuring that the output has length at most `maxlength`.
+    weights: If non-None, must be the same shape as arr. For each value in
+        `arr`, the bin will be incremented by the corresponding weight instead
+        of 1.
+    dtype: If `weights` is None, determines the type of the output bins.
+
+  Returns:
+    A vector with the same dtype as `weights` or the given `dtype`. The bin
+    values.
+  """
+  arr = ops.convert_to_tensor(arr, name="arr", dtype=dtypes.int32)
+  array_is_nonempty = reduce_prod(array_ops.shape(arr)) > 0
+  output_size = cast(array_is_nonempty, dtypes.int32) * (reduce_max(arr) + 1)
+  if minlength is not None:
+    minlength = ops.convert_to_tensor(
+        minlength, name="minlength", dtype=dtypes.int32)
+    output_size = gen_math_ops.maximum(minlength, output_size)
+  if maxlength is not None:
+    maxlength = ops.convert_to_tensor(
+        maxlength, name="maxlength", dtype=dtypes.int32)
+    output_size = gen_math_ops.minimum(maxlength, output_size)
+  weights = (ops.convert_to_tensor(weights, name="weights")
+             if weights is not None else constant_op.constant([], dtype))
+  return gen_math_ops.bincount(arr, output_size, weights)
+
+
 def cumsum(x, axis=0, exclusive=False, reverse=False, name=None):
   """Compute the cumulative sum of the tensor `x` along `axis`.
 
@@ -2049,9 +2100,10 @@ def cumsum(x, axis=0, exclusive=False, reverse=False, name=None):
     x: A `Tensor`. Must be one of the following types: `float32`, `float64`,
        `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`,
        `complex128`, `qint8`, `quint8`, `qint32`, `half`.
-       axis: A `Tensor` of type `int32` (default: 0).
-       reverse: A `bool` (default: False).
-       name: A name for the operation (optional).
+    axis: A `Tensor` of type `int32` (default: 0).
+    exclusive: If `True`, perform exclusive cumsum.
+    reverse: A `bool` (default: False).
+    name: A name for the operation (optional).
 
   Returns:
     A `Tensor`. Has the same type as `x`.
@@ -2096,6 +2148,7 @@ def cumprod(x, axis=0, exclusive=False, reverse=False, name=None):
        `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`,
        `complex128`, `qint8`, `quint8`, `qint32`, `half`.
     axis: A `Tensor` of type `int32` (default: 0).
+    exclusive: If `True`, perform exclusive cumprod.
     reverse: A `bool` (default: False).
     name: A name for the operation (optional).
 
@@ -2247,12 +2300,13 @@ def tensordot(a, b, axes, name=None):
         assumes that `a` is the second argument in the contraction operation.
 
     Returns:
-      A pair `(reshaped_a, free_dims)` where `reshaped_a` is the tensor `a`
-      reshaped to allow contraction via `matmul` and `free_dims` is either a
-      list of integers or an `int32` `Tensor`, depending on if `axes` is a list
-      and the shape of `a`  is fully defined.
+      A tuple `(reshaped_a, free_dims, free_dims_static)` where `reshaped_a` is
+      the tensor `a` reshaped to allow contraction via `matmul`, `free_dims` is
+      either a list of integers or an `int32` `Tensor`, depending on whether
+      the shape of a is fully specified, and free_dims_static is either a list
+      of integers and None values, or None, representing the inferred
+      static shape of the free dimensions
     """
-    # TODO(b/33084409): Implement partial shape inference.
     if a.get_shape().is_fully_defined() and isinstance(axes, (list, tuple)):
       shape_a = a.get_shape().as_list()
       axes = [i if i >= 0 else i + len(shape_a) for i in axes]
@@ -2263,8 +2317,15 @@ def tensordot(a, b, axes, name=None):
       perm = list(axes) + free if flipped else free + list(axes)
       new_shape = [prod_axes, prod_free] if flipped else [prod_free, prod_axes]
       reshaped_a = array_ops.reshape(array_ops.transpose(a, perm), new_shape)
-      return reshaped_a, free_dims
+      return reshaped_a, free_dims, free_dims
     else:
+      if a.get_shape().ndims is not None and isinstance(axes, (list, tuple)):
+        shape_a = a.get_shape().as_list()
+        axes = [i if i >= 0 else i + len(shape_a) for i in axes]
+        free = [i for i in xrange(len(shape_a)) if i not in axes]
+        free_dims_static = [shape_a[i] for i in free]
+      else:
+        free_dims_static = None
       shape_a = array_ops.shape(a)
       rank_a = array_ops.rank(a)
       axes = ops.convert_to_tensor(axes, dtype=dtypes.int32, name="axes")
@@ -2283,7 +2344,7 @@ def tensordot(a, b, axes, name=None):
         perm = array_ops.concat([free, axes], 0)
         new_shape = array_ops.stack([prod_free_dims, prod_axes_dims])
       reshaped_a = array_ops.reshape(array_ops.transpose(a, perm), new_shape)
-      return reshaped_a, free_dims
+      return reshaped_a, free_dims, free_dims_static
 
   def _tensordot_axes(a, axes):
     """Generates two sets of contraction axes for the two tensor arguments."""
@@ -2315,16 +2376,20 @@ def tensordot(a, b, axes, name=None):
     a = ops.convert_to_tensor(a, name="a")
     b = ops.convert_to_tensor(b, name="b")
     a_axes, b_axes = _tensordot_axes(a, axes)
-    a_reshape, a_free_dims = _tensordot_reshape(a, a_axes)
-    b_reshape, b_free_dims = _tensordot_reshape(b, b_axes, True)
+    a_reshape, a_free_dims, a_free_dims_static = _tensordot_reshape(a, a_axes)
+    b_reshape, b_free_dims, b_free_dims_static = _tensordot_reshape(b, b_axes,
+                                                                    True)
     ab_matmul = matmul(a_reshape, b_reshape)
     if isinstance(a_free_dims, list) and isinstance(b_free_dims, list):
       return array_ops.reshape(ab_matmul, a_free_dims + b_free_dims, name=name)
     else:
-      a_free_dims = ops.convert_to_tensor(a_free_dims)
-      b_free_dims = ops.convert_to_tensor(b_free_dims)
-      return array_ops.reshape(
+      a_free_dims = ops.convert_to_tensor(a_free_dims, dtype=dtypes.int32)
+      b_free_dims = ops.convert_to_tensor(b_free_dims, dtype=dtypes.int32)
+      product = array_ops.reshape(
           ab_matmul, array_ops.concat([a_free_dims, b_free_dims], 0), name=name)
+      if a_free_dims_static is not None and b_free_dims_static is not None:
+        product.set_shape(a_free_dims_static + b_free_dims_static)
+      return product
 
 
 # FFT ops were moved to tf.spectral. tf.fft symbols were part of the TensorFlow

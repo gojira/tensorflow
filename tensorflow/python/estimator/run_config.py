@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Run Config."""
+"""Environment configuration object for Estimators."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -71,6 +71,10 @@ class RunConfig(object):
   @property
   def save_checkpoints_secs(self):
     return 600
+
+  @property
+  def session_config(self):
+    return None
 
   @property
   def save_checkpoints_steps(self):

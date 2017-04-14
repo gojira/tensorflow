@@ -32,6 +32,16 @@ RL = debugger_cli_common.RichLine
 # when printing the value of the tensor.
 DEFAULT_NDARRAY_DISPLAY_THRESHOLD = 2000
 
+COLOR_BLACK = "black"
+COLOR_BLUE = "blue"
+COLOR_CYAN = "cyan"
+COLOR_GRAY = "gray"
+COLOR_GREEN = "green"
+COLOR_MAGENTA = "magenta"
+COLOR_RED = "red"
+COLOR_WHITE = "white"
+COLOR_YELLOW = "yellow"
+
 
 def bytes_to_readable_str(num_bytes, include_b=False):
   """Generate a human-readable string representing number of bytes.
@@ -154,7 +164,7 @@ def error(msg):
   """
 
   return debugger_cli_common.rich_text_lines_from_rich_line_list([
-      RL("ERROR: " + msg, "red")])
+      RL("ERROR: " + msg, COLOR_RED)])
 
 
 def _get_fetch_name(fetch):
@@ -301,7 +311,7 @@ def get_run_start_intro(run_call_count,
       _recommend_command(
           "run -t <T>",
           "Execute run() calls (T - 1) times without debugging, then "
-          "execute run() one more time and drop back to the CLI"))
+          "execute run() once more with debugging and drop back to the CLI"))
   out.extend(
       _recommend_command(
           "run -f <filter_name>",

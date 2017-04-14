@@ -28,6 +28,7 @@ from tensorflow.contrib.framework.python.ops import variables
 from tensorflow.contrib.layers.python.layers import initializers
 from tensorflow.contrib.layers.python.layers import utils
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import function
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.layers import convolutional as convolutional_layers
@@ -68,6 +69,7 @@ __all__ = ['avg_pool2d',
            'relu',
            'relu6',
            'repeat',
+           'scale_gradient',
            'separable_conv2d',
            'separable_convolution2d',
            'softmax',
@@ -160,9 +162,8 @@ def _fused_batch_norm(
   they need to be added as a dependency to the `train_op`, example:
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    if update_ops:
-      updates = tf.group(*update_ops)
-      total_loss = control_flow_ops.with_dependencies([updates], total_loss)
+    with tf.control_dependencies(update_ops):
+      train_op = optimizer.minimize(loss)
 
   One can set updates_collections=None to force the updates in place, but that
   can have speed penalty, especially in distributed settings.
@@ -221,6 +222,7 @@ def _fused_batch_norm(
       scope, 'BatchNorm', [inputs], reuse=reuse) as sc:
     inputs = ops.convert_to_tensor(inputs)
     original_shape = inputs.get_shape()
+    original_inputs = inputs
     original_rank = original_shape.ndims
     if original_rank is None:
       raise ValueError('Inputs %s has undefined rank' % inputs.name)
@@ -351,7 +353,7 @@ def _fused_batch_norm(
 
     outputs.set_shape(inputs_shape)
     if original_shape.ndims == 2:
-      outputs = array_ops.reshape(outputs, original_shape)
+      outputs = array_ops.reshape(outputs, array_ops.shape(original_inputs))
     if activation_fn is not None:
       outputs = activation_fn(outputs)
     return utils.collect_named_outputs(outputs_collections,
@@ -359,26 +361,28 @@ def _fused_batch_norm(
 
 
 @add_arg_scope
-def batch_norm(
-    inputs,
-    decay=0.999,
-    center=True,
-    scale=False,
-    epsilon=0.001,
-    activation_fn=None,
-    param_initializers=None,
-    param_regularizers=None,
-    updates_collections=ops.GraphKeys.UPDATE_OPS,
-    is_training=True,
-    reuse=None,
-    variables_collections=None,
-    outputs_collections=None,
-    trainable=True,
-    batch_weights=None,
-    fused=False,
-    data_format=DATA_FORMAT_NHWC,
-    zero_debias_moving_mean=False,
-    scope=None):
+def batch_norm(inputs,
+               decay=0.999,
+               center=True,
+               scale=False,
+               epsilon=0.001,
+               activation_fn=None,
+               param_initializers=None,
+               param_regularizers=None,
+               updates_collections=ops.GraphKeys.UPDATE_OPS,
+               is_training=True,
+               reuse=None,
+               variables_collections=None,
+               outputs_collections=None,
+               trainable=True,
+               batch_weights=None,
+               fused=False,
+               data_format=DATA_FORMAT_NHWC,
+               zero_debias_moving_mean=False,
+               scope=None,
+               renorm=False,
+               renorm_clipping=None,
+               renorm_decay=0.99):
   """Adds a Batch Normalization layer from http://arxiv.org/abs/1502.03167.
 
     "Batch Normalization: Accelerating Deep Network Training by Reducing
@@ -393,9 +397,8 @@ def batch_norm(
   they need to be added as a dependency to the `train_op`, example:
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    if update_ops:
-      updates = tf.group(*update_ops)
-      total_loss = control_flow_ops.with_dependencies([updates], total_loss)
+    with tf.control_dependencies(update_ops):
+      train_op = optimizer.minimize(loss)
 
   One can set updates_collections=None to force the updates in place, but that
   can have speed penalty, especially in distributed settings.
@@ -446,6 +449,19 @@ def batch_norm(
     zero_debias_moving_mean: Use zero_debias for moving_mean. It creates a new
       pair of variables 'moving_mean/biased' and 'moving_mean/local_step'.
     scope: Optional scope for `variable_scope`.
+    renorm: Whether to use Batch Renormalization
+      (https://arxiv.org/abs/1702.03275). This adds extra variables during
+      training. The inference is the same for either value of this parameter.
+    renorm_clipping: A dictionary that may map keys 'rmax', 'rmin', 'dmax' to
+      scalar `Tensors` used to clip the renorm correction. The correction
+      `(r, d)` is used as `corrected_value = normalized_value * r + d`, with
+      `r` clipped to [rmin, rmax], and `d` to [-dmax, dmax]. Missing rmax, rmin,
+      dmax are set to inf, 0, inf, respectively.
+    renorm_decay: Momentum used to update the moving means and standard
+      deviations with renorm. Unlike `momentum`, this affects training
+      and should be neither too small (which would add noise) nor too large
+      (which would give stale estimates). Note that `decay` is still applied
+      to get the means and variances for inference.
 
   Returns:
     A `Tensor` representing the output of the operation.
@@ -464,6 +480,8 @@ def batch_norm(
     if param_regularizers is not None:
       raise ValueError('Regularizers are not currently '
                        'supported for fused batch norm.')
+    if renorm:
+      raise ValueError('Renorm is not supported for fused batch norm.')
     return _fused_batch_norm(
         inputs,
         decay=decay,
@@ -524,6 +542,9 @@ def batch_norm(
           beta_regularizer=beta_regularizer,
           gamma_regularizer=gamma_regularizer,
           trainable=trainable,
+          renorm=renorm,
+          renorm_clipping=renorm_clipping,
+          renorm_momentum=renorm_decay,
           name=sc.name,
           _scope=sc,
           _reuse=reuse)
@@ -551,6 +572,9 @@ def batch_norm(
     # Custom updates collections are not supported because the update logic
     # is different in this case, in particular w.r.t. "forced updates" and
     # update op reuse.
+    if renorm:
+      raise ValueError('renorm is not supported with batch_weights, '
+                       'updates_collections or zero_debias_moving_mean')
     inputs_shape = inputs.get_shape()
     inputs_rank = inputs_shape.ndims
     if inputs_rank is None:
@@ -842,8 +866,8 @@ def convolution(inputs,
       the `input` and output is the last dimension (default, or if `data_format`
       does not start with "NC"), or the second dimension (if `data_format`
       starts with "NC").  For N=1, the valid values are "NWC" (default) and
-      "NCW".  For N=2, the valid values are "NHWC" (default) and "NCHW".  For
-      N=3, currently the only valid value is "NDHWC".
+      "NCW".  For N=2, the valid values are "NHWC" (default) and "NCHW".
+      For N=3, the valid values are "NDHWC" (default) and "NCDHW".
     rate: A sequence of N positive integers specifying the dilation rate to use
       for a'trous convolution.  Can be a single integer to specify the same
       value for all spatial dimensions.  Specifying any `rate` value != 1 is
@@ -875,7 +899,7 @@ def convolution(inputs,
     ValueError: If `data_format` is invalid.
     ValueError: Both 'rate' and `stride` are not uniformly 1.
   """
-  if data_format not in [None, 'NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC']:
+  if data_format not in [None, 'NWC', 'NCW', 'NHWC', 'NCHW', 'NDHWC', 'NCDHW']:
     raise ValueError('Invalid data_format: %r' % (data_format,))
 
   layer_variable_getter = _build_variable_getter(
@@ -1232,7 +1256,7 @@ def flatten(inputs,
     batch_dim, spatial_dims = input_shape[0], input_shape[1:]
     if all(spatial_dims):
       outputs.set_shape([batch_dim,
-                        functools.reduce(lambda x, y: x * y, spatial_dims)])
+                         functools.reduce(lambda x, y: x * y, spatial_dims)])
     else:
       outputs.set_shape([batch_dim, None])
 
@@ -1241,6 +1265,13 @@ def flatten(inputs,
 
 def _sparse_inner_flatten(inputs, new_rank):
   """Helper function for `inner_flatten`."""
+  inputs_rank = inputs.dense_shape.get_shape().as_list()[0]
+  if inputs_rank < new_rank:
+    raise ValueError(
+        'Inputs has rank less than new_rank. {} must have rank at least'
+        ' {}. Received rank {}, shape {}'.format(inputs, new_rank, inputs_rank,
+                                                 inputs.get_shape()))
+
   outer_dimensions = inputs.dense_shape[:new_rank - 1]
   inner_dimensions = inputs.dense_shape[new_rank - 1:]
   new_shape = array_ops.concat((outer_dimensions,
@@ -1620,8 +1651,8 @@ def pool(inputs,
       the `input` and output is the last dimension (default, or if `data_format`
       does not start with "NC"), or the second dimension (if `data_format`
       starts with "NC").  For N=1, the valid values are "NWC" (default) and
-      "NCW".  For N=2, the valid values are "NHWC" (default) and "NCHW".  For
-      N=3, currently the only valid value is "NDHWC".
+      "NCW".  For N=2, the valid values are "NHWC" (default) and "NCHW".
+      For N=3, the valid values are "NDHWC" (default) and "NCDHW".
     dilation_rate: Optional.  Dilation rate.  Sequence of N ints >= 1.  Defaults
       to [1]*N.  Can also be a single integer to specify the same value for all
       spatial dimensions.  If any value of dilation_rate is > 1, then all values
@@ -1745,6 +1776,48 @@ def repeat(inputs, repetitions, layer, *args, **kwargs):
       kwargs['scope'] = scope + '_' + str(i+1)
       outputs = layer(outputs, *args, **kwargs)
     return outputs
+
+
+def _scale_gradient_shape(op):
+  """Shape helper function for scale_gradient function below."""
+  return [op.inputs[0].shape]
+
+
+def _scale_gradient_grad(op, grad):
+  """Python gradient helper function for scale_gradient function below."""
+  return [grad * op.inputs[1], None]
+
+
+@function.Defun(python_grad_func=_scale_gradient_grad,
+                shape_func=_scale_gradient_shape)
+def scale_gradient(inputs, gradient_multiplier):
+  """Identity operation, but with the gradient multiplied by a tensor.
+
+  The TensorFlow gradient system will compute the gradient with respect to
+  `inputs` as the product of the gradient with respect to the `output`
+  multiplied by a specified `gradient_multiplier` tensor.  If
+  `gradient_multiplier` is equal to 1, then this results in the true gradient.
+  Otherwise, it results in a scaled gradient.
+
+  This can be useful for adjusting the relative learning rate of different
+  parameter tensors when performing gradient descent, and because this rescaling
+  can be inserted at arbitrary locations within a graph, is often more
+  convenient to apply than simply rescaling the final computed gradients.
+
+  Args:
+    inputs: Tensor to be output.
+    gradient_multiplier: Tensor by which to multiply the gradient with respect
+      to `output` to compute the gradient with respect to `inputs`.  Its shape
+      must be broadcastable to the shape of `inputs`.
+
+  Returns:
+    output Tensor, equal to `inputs`.
+  """
+  # gradient_multiplier is implicitly saved by decorator, and only used for
+  # gradient computation.
+  del gradient_multiplier
+
+  return inputs
 
 
 @add_arg_scope
@@ -1900,6 +1973,7 @@ def separable_convolution2d(
                                             dtype=dtype,
                                             initializer=biases_initializer,
                                             regularizer=biases_regularizer,
+                                            trainable=trainable,
                                             collections=biases_collections)
           outputs = nn.bias_add(outputs, biases)
 

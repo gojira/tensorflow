@@ -125,6 +125,23 @@ Status OpKernel::OutputRange(StringPiece output_name, int* start,
   }
 }
 
+Status OpKernel::MakeShape(const Tensor& shape, TensorShape* out) const {
+  if (!IsLegacyVector(shape.shape())) {
+    return errors::InvalidArgument(
+        "shape must be a vector of {int32,int64}, got shape ",
+        shape.shape().DebugString());
+  }
+  if (shape.dtype() == DataType::DT_INT32) {
+    auto vec = shape.flat<int32>();
+    return TensorShapeUtils::MakeShape(vec.data(), vec.size(), out);
+  } else if (shape.dtype() == DataType::DT_INT64) {
+    auto vec = shape.flat<int64>();
+    return TensorShapeUtils::MakeShape(vec.data(), vec.size(), out);
+  } else {
+    return errors::InvalidArgument("shape must be a vector of {int32,int64}.");
+  }
+}
+
 void AsyncOpKernel::Compute(OpKernelContext* context) {
   Notification n;
   ComputeAsync(context, [&n]() { n.Notify(); });
@@ -436,6 +453,21 @@ std::unique_ptr<Tensor> OpKernelContext::forward_input(
   std::unique_ptr<Tensor> output_tensor(new Tensor());
   CHECK(output_tensor->CopyFrom(*input.tensor, output_shape));
   return output_tensor;
+}
+
+Status OpKernelContext::forward_input_or_allocate_temp(
+    gtl::ArraySlice<int> candidate_input_indices, DataType type,
+    const TensorShape& shape, const AllocatorAttributes& allocator_attr,
+    Tensor* out_temp) {
+  for (int input_index : candidate_input_indices) {
+    std::unique_ptr<Tensor> new_tensor =
+        forward_input(input_index, type, shape, DEVICE_MEMORY, allocator_attr);
+    if (new_tensor != nullptr) {
+      *out_temp = std::move(*new_tensor);
+      return Status::OK();
+    }
+  }
+  return allocate_temp(type, shape, out_temp, allocator_attr);
 }
 
 void OpKernelContext::delete_ref_input(int index, bool lock_held) {

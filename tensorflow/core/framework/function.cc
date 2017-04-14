@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
+#include "tensorflow/core/util/equal_graph_def.h"
 
 namespace tensorflow {
 
@@ -407,7 +408,7 @@ string Print(const AttrValue& attr_value) {
     for (auto p : attr_value.func().attr()) {
       entries.push_back(strings::StrCat(p.first, "=", Print(p.second)));
     }
-    sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
     return strings::StrCat(attr_value.func().name(), "[",
                            str_util::Join(entries, ", "), "]");
   }
@@ -423,7 +424,7 @@ string Print(const NodeDef& n) {
     for (auto& a : n.attr()) {
       entries.push_back(strings::StrCat(a.first, "=", Print(a.second)));
     }
-    sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
     strings::StrAppend(&out, "[", str_util::Join(entries, ", "), "]");
   }
   strings::StrAppend(&out, "(");
@@ -501,8 +502,8 @@ string Print(const GraphDef& gdef) {
     TF_CHECK_OK(GetNodeAttr(*y, "index", &yi));
     return xi < yi;
   };
-  sort(arg.begin(), arg.end(), comp);
-  sort(ret.begin(), ret.end(), comp);
+  std::sort(arg.begin(), arg.end(), comp);
+  std::sort(ret.begin(), ret.end(), comp);
   string out;
   strings::StrAppend(&out, "\n(");
   auto get_type = [](const NodeDef& n) {
@@ -652,6 +653,36 @@ string DebugStringWhole(const GraphDef& gdef) {
   return ret;
 }
 
+bool FunctionDefsEqual(const FunctionDef& f1, const FunctionDef& f2) {
+  // NOTE(skyewm): Using MessageDifferencer would be better here, but that is
+  // currently not included in tensorflow/core/platform/default/protobuf.h, so
+  // play fast and loose here.  I don't see anything in OpDef that should allow
+  // multiple equivalent string serializations, with the exception of
+  // AttrValues, which can vary for tensor values (see AreAttrValuesEqual()
+  // comments).
+  string sig1, sig2;
+  f1.signature().SerializeToString(&sig1);
+  f2.signature().SerializeToString(&sig2);
+  if (sig1 != sig2) return false;
+
+  if (f1.attr().size() != f2.attr().size()) return false;
+  for (auto iter1 : f1.attr()) {
+    auto iter2 = f2.attr().find(iter1.first);
+    if (iter2 == f2.attr().end()) return false;
+    if (!AreAttrValuesEqual(iter1.second, iter2->second)) return false;
+  }
+
+  if (!EqualRepeatedNodeDef(f1.node_def(), f2.node_def(), nullptr)) {
+    return false;
+  }
+
+  std::map<string, string> ret1(f1.ret().begin(), f1.ret().end());
+  std::map<string, string> ret2(f2.ret().begin(), f2.ret().end());
+  if (ret1 != ret2) return false;
+
+  return true;
+}
+
 string Canonicalize(const string& funcname,
                     const InstantiateAttrValueMap& attrs) {
   std::vector<string> entries;
@@ -659,7 +690,7 @@ string Canonicalize(const string& funcname,
   for (auto p : attrs) {
     entries.push_back(strings::StrCat(p.first, "=", Print(p.second)));
   }
-  sort(entries.begin(), entries.end());
+  std::sort(entries.begin(), entries.end());
   return strings::StrCat(funcname, "[", str_util::Join(entries, ","), "]");
 }
 
@@ -776,6 +807,40 @@ Status FunctionLibraryDefinition::AddFunctionDef(const FunctionDef& fdef) {
                                    " already exists in function library.");
   }
   ptr.reset(new FunctionDefAndOpRegistration(fdef));
+  return Status::OK();
+}
+
+Status FunctionLibraryDefinition::AddGradientDef(const GradientDef& grad) {
+  if (func_grad_.count(grad.function_name()) > 0) {
+    return errors::InvalidArgument("Gradient for function '",
+                                   grad.function_name(), "' already exists.");
+  }
+  func_grad_[grad.function_name()] = grad.gradient_func();
+  return Status::OK();
+}
+
+Status FunctionLibraryDefinition::AddLibrary(
+    const FunctionLibraryDefinition& other) {
+  for (auto iter : other.function_defs_) {
+    TF_RETURN_IF_ERROR(AddFunctionDef(iter.second->fdef));
+  }
+  for (auto iter : other.func_grad_) {
+    GradientDef grad;
+    grad.set_function_name(iter.first);
+    grad.set_gradient_func(iter.second);
+    TF_RETURN_IF_ERROR(AddGradientDef(grad));
+  }
+  return Status::OK();
+}
+
+Status FunctionLibraryDefinition::AddLibrary(
+    const FunctionDefLibrary& lib_def) {
+  for (const FunctionDef& fdef : lib_def.function()) {
+    TF_RETURN_IF_ERROR(AddFunctionDef(fdef));
+  }
+  for (const GradientDef& grad : lib_def.gradient()) {
+    TF_RETURN_IF_ERROR(AddGradientDef(grad));
+  }
   return Status::OK();
 }
 

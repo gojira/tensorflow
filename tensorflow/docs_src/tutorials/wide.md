@@ -14,8 +14,7 @@ To try the code for this tutorial:
 
 1.  @{$install$Install TensorFlow} if you haven't already.
 
-2.  Download [the tutorial code](
-https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/learn/wide_n_deep_tutorial.py).
+2.  Download [the tutorial code](https://www.tensorflow.org/code/tensorflow/examples/learn/wide_n_deep_tutorial.py).
 
 3.  Install the pandas data analysis library. tf.learn doesn't require pandas, but it does support it, and this tutorial uses pandas. To install pandas:
     1. Get `pip`:
@@ -27,7 +26,7 @@ https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/learn/w
        # Mac OS X
        $ sudo easy_install pip
        $ sudo easy_install --upgrade six
-      ```
+       ```
 
     2. Use `pip` to install pandas:
 
@@ -188,7 +187,7 @@ def input_fn(df):
   categorical_cols = {k: tf.SparseTensor(
       indices=[[i, 0] for i in range(df[k].size)],
       values=df[k].values,
-      shape=[df[k].size, 1])
+      dense_shape=[df[k].size, 1])
                       for k in CATEGORICAL_COLUMNS}
   # Merges the two dictionaries into one.
   feature_cols = dict(continuous_cols.items() + categorical_cols.items())
@@ -261,6 +260,8 @@ learned through the model training process we'll go through later.
 We'll do the similar trick to define the other categorical features:
 
 ```python
+race = tf.contrib.layers.sparse_column_with_hash_bucket("race", hash_bucket_size=100)
+marital_status = tf.contrib.layers.sparse_column_with_hash_bucket("marital_status", hash_bucket_size=100)
 relationship = tf.contrib.layers.sparse_column_with_hash_bucket("relationship", hash_bucket_size=100)
 workclass = tf.contrib.layers.sparse_column_with_hash_bucket("workclass", hash_bucket_size=100)
 occupation = tf.contrib.layers.sparse_column_with_hash_bucket("occupation", hash_bucket_size=1000)
@@ -377,7 +378,7 @@ the labels of the holdout data:
 ```python
 results = m.evaluate(input_fn=eval_input_fn, steps=1)
 for key in sorted(results):
-    print "%s: %s" % (key, results[key])
+    print("%s: %s" % (key, results[key]))
 ```
 
 The first line of the output should be something like `accuracy: 0.83557522`,
@@ -385,7 +386,7 @@ which means the accuracy is 83.6%. Feel free to try more features and
 transformations and see if you can do even better!
 
 If you'd like to see a working end-to-end example, you can download our
-[example code](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/learn/wide_n_deep_tutorial.py)
+[example code](https://www.tensorflow.org/code/tensorflow/examples/learn/wide_n_deep_tutorial.py).
 and set the `model_type` flag to `wide`.
 
 ## Adding Regularization to Prevent Overfitting

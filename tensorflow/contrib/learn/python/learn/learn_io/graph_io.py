@@ -74,7 +74,9 @@ def read_batch_examples(file_pattern,
       NOTE - If specified, creates a variable that must be initialized, so call
       `tf.global_variables_initializer()` and run the op in a session.
     queue_capacity: Capacity for input queue.
-    num_threads: The number of threads enqueuing examples.
+    num_threads: The number of threads enqueuing examples. In order to have
+      predicted and repeatable order of reading and enqueueing, such as in
+      prediction and evaluation mode, `num_threads` should be 1.
     read_batch_size: An int or scalar `Tensor` specifying the number of
       records to read at once
     parse_fn: Parsing function, takes `Example` Tensor returns parsed
@@ -139,7 +141,9 @@ def read_keyed_batch_examples(file_pattern,
       NOTE - If specified, creates a variable that must be initialized, so call
       `tf.global_variables_initializer()` and run the op in a session.
     queue_capacity: Capacity for input queue.
-    num_threads: The number of threads enqueuing examples.
+    num_threads: The number of threads enqueuing examples. In order to have
+      predicted and repeatable order of reading and enqueueing, such as in
+      prediction and evaluation mode, `num_threads` should be 1.
     read_batch_size: An int or scalar `Tensor` specifying the number of
       records to read at once
     parse_fn: Parsing function, takes `Example` Tensor returns parsed
@@ -355,8 +359,9 @@ def _read_keyed_batch_examples_helper(file_pattern,
   # Check input parameters are given and reasonable.
   if (not queue_capacity) or (queue_capacity <= 0):
     raise ValueError('Invalid queue_capacity %s.' % queue_capacity)
-  if (batch_size is None) or ((not isinstance(batch_size, ops.Tensor)) and
-                              (batch_size <= 0 or batch_size > queue_capacity)):
+  if (batch_size is None) or (
+      (not isinstance(batch_size, ops.Tensor)) and
+      (batch_size <= 0 or batch_size >= queue_capacity)):
     raise ValueError('Invalid batch_size %s, with queue_capacity %s.' %
                      (batch_size, queue_capacity))
   if (read_batch_size is None) or (
@@ -464,7 +469,9 @@ def read_keyed_batch_features(file_pattern,
       creates a variable that must be initialized, so call
       tf.local_variables_initializer() and run the op in a session.
     queue_capacity: Capacity for input queue.
-    reader_num_threads: The number of threads to read examples.
+    reader_num_threads: The number of threads to read examples. In order to have
+      predicted and repeatable order of reading and enqueueing, such as in
+      prediction and evaluation mode, `reader_num_threads` should be 1.
     feature_queue_capacity: Capacity of the parsed features queue.
     num_enqueue_threads: Number of threads to enqueue the parsed example queue.
       Using multiple threads to enqueue the parsed example queue helps maintain
@@ -744,7 +751,9 @@ def read_batch_features(file_pattern,
     queue_capacity: Capacity for input queue.
     feature_queue_capacity: Capacity of the parsed features queue. Set this
       value to a small number, for example 5 if the parsed features are large.
-    reader_num_threads: The number of threads to read examples.
+    reader_num_threads: The number of threads to read examples. In order to have
+      predicted and repeatable order of reading and enqueueing, such as in
+      prediction and evaluation mode, `reader_num_threads` should be 1.
     parse_fn: Parsing function, takes `Example` Tensor returns parsed
       representation. If `None`, no parsing is done.
     name: Name of resulting op.
@@ -794,7 +803,9 @@ def read_batch_record_features(file_pattern,
       creates a variable that must be initialized, so call
       tf.local_variables_initializer() and run the op in a session.
     queue_capacity: Capacity for input queue.
-    reader_num_threads: The number of threads to read examples.
+    reader_num_threads: The number of threads to read examples. In order to have
+      predicted and repeatable order of reading and enqueueing, such as in
+      prediction and evaluation mode, `reader_num_threads` should be 1.
     name: Name of resulting op.
 
   Returns:

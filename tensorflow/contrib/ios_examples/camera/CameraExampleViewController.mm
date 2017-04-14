@@ -106,20 +106,15 @@ static void *AVCaptureStillImageIsCapturingStillImageContext =
   [session startRunning];
 
   if (error) {
-    NSString *title = \
-      [NSString stringWithFormat:@"Failed with error %d", (int)[error code]];
-    UIAlertController *alertController = \
-      [UIAlertController alertControllerWithTitle:title
-                                          message:[error localizedDescription]
-                                   preferredStyle:UIAlertControllerStyleAlert];
-    UIAlertAction *dismiss = \
-      [UIAlertAction actionWithTitle:@"Dismiss"
-                               style:UIAlertActionStyleDefault
-                             handler:nil];
+    NSString *title = [NSString stringWithFormat:@"Failed with error %d", (int)[error code]];
+    UIAlertController *alertController =
+        [UIAlertController alertControllerWithTitle:title
+                                            message:[error localizedDescription]
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction *dismiss =
+        [UIAlertAction actionWithTitle:@"Dismiss" style:UIAlertActionStyleDefault handler:nil];
     [alertController addAction:dismiss];
-    [self presentViewController:alertController
-                       animated:YES
-                     completion:nil];
+    [self presentViewController:alertController animated:YES completion:nil];
     [self teardownAVCapture];
   }
 }
@@ -374,13 +369,8 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
   isUsingFrontFacingCamera = !isUsingFrontFacingCamera;
 }
 
-- (void)didReceiveMemoryWarning {
-  [super didReceiveMemoryWarning];
-}
-
 - (void)viewDidLoad {
   [super viewDidLoad];
-  square = [UIImage imageNamed:@"squarePNG"];
   synth = [[AVSpeechSynthesizer alloc] init];
   labelLayers = [[NSMutableArray alloc] init];
   oldPredictionValues = [[NSMutableDictionary alloc] init];
@@ -402,26 +392,6 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     LOG(FATAL) << "Couldn't load labels: " << labels_status;
   }
   [self setupAVCapture];
-}
-
-- (void)viewDidUnload {
-  [super viewDidUnload];
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-  [super viewWillAppear:animated];
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-  [super viewDidAppear:animated];
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-  [super viewWillDisappear:animated];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-  [super viewDidDisappear:animated];
 }
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:

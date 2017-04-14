@@ -31,6 +31,7 @@ from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import rnn
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
@@ -38,34 +39,7 @@ from tensorflow.python.util import nest
 __all__ = ["Decoder", "dynamic_decode"]
 
 
-def _transpose_batch_time(x):
-  """Transpose the batch and time dimensions of a Tensor.
-
-  Retains as much of the static shape information as possible.
-
-  Args:
-    x: A tensor of rank 2 or higher.
-
-  Returns:
-    x transposed along the first two dimensions.
-
-  Raises:
-    ValueError: if `x` is rank 1 or lower.
-  """
-  x_static_shape = x.get_shape()
-  if x_static_shape.ndims is not None and x_static_shape.ndims < 2:
-    raise ValueError(
-        "Expected input tensor %s to have rank at least 2, but saw shape: %s" %
-        (x, x_static_shape))
-  x_rank = array_ops.rank(x)
-  x_t = array_ops.transpose(
-      x, array_ops.concat(
-          ([1, 0], math_ops.range(2, x_rank)), axis=0))
-  x_t.set_shape(
-      tensor_shape.TensorShape([
-          x_static_shape[1].value, x_static_shape[0].value
-      ]).concatenate(x_static_shape[2:]))
-  return x_t
+_transpose_batch_time = rnn._transpose_batch_time  # pylint: disable=protected-access
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -249,8 +223,14 @@ def dynamic_decode(decoder,
 
       # Copy through states past finish
       def _maybe_copy_state(new, cur):
-        return (new if isinstance(cur, tensor_array_ops.TensorArray) else
-                array_ops.where(finished, cur, new))
+        # TensorArrays and scalar states get passed through.
+        if isinstance(cur, tensor_array_ops.TensorArray):
+          pass_through = True
+        else:
+          new.set_shape(cur.shape)
+          pass_through = (new.shape.ndims == 0)
+        return new if pass_through else array_ops.where(finished, cur, new)
+
       if impute_finished:
         next_state = nest.map_structure(
             _maybe_copy_state, decoder_state, state)
