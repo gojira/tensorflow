@@ -278,7 +278,7 @@ tf_module {
   }
   member {
     name: "contrib"
-    mtype: "<class \'_LazyContribLoader\'>"
+    mtype: "<class \'tensorflow.python.util.lazy_loader.LazyLoader\'>"
   }
   member {
     name: "double"
@@ -418,10 +418,6 @@ tf_module {
   }
   member {
     name: "saved_model"
-    mtype: "<type \'module\'>"
-  }
-  member {
-    name: "sdca"
     mtype: "<type \'module\'>"
   }
   member {
@@ -654,7 +650,7 @@ tf_module {
   }
   member_method {
     name: "bincount"
-    argspec: "args=[\'arr\', \'minlength\', \'maxlength\', \'weights\', \'dtype\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \"<dtype: \'int32\'>\"], "
+    argspec: "args=[\'arr\', \'weights\', \'minlength\', \'maxlength\', \'dtype\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \"<dtype: \'int32\'>\"], "
   }
   member_method {
     name: "bitcast"
