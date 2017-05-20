@@ -154,11 +154,6 @@ class TensorboardServerTest(test.TestCase):
     response = self._get('/asdf')
     self.assertEqual(response.status, 404)
 
-  def testDirectoryTraversal(self):
-    """Attempt a directory traversal attack."""
-    response = self._get('/..' * 30 + '/etc/passwd')
-    self.assertEqual(response.status, 400)
-
   def testLogdir(self):
     """Test the format of the data/logdir endpoint."""
     parsed_object = self._getJson('/data/logdir')
@@ -226,6 +221,19 @@ class TensorboardServerTest(test.TestCase):
       self.assertEqual(response.getheader('Expires'), '0', msg=path)
       response.read()
       connection.close()
+
+  def testScalars(self):
+    """Test the format of /data/scalars."""
+    data = self._getJson('/data/scalars?run=run1&tag=simple_values')
+    self.assertEqual(len(data), self._SCALAR_COUNT)
+
+  def testScalarsCsv(self):
+    """Test the csv format of /data/scalars."""
+    data = self._get(
+        '/data/scalars?run=run1&tag=simple_values&format=csv').read()
+    line_count = data.count('\n')
+    self.assertEqual(line_count,
+                     self._SCALAR_COUNT + 1)  # include 1 more line for header
 
   def testHistograms(self):
     """Test the format of /data/histograms."""

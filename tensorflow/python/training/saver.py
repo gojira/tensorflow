@@ -511,9 +511,7 @@ class BaseSaverBuilder(object):
           raise ValueError("At least two variables have the same name: %s" %
                            var.name)
         names_to_saveables[var.name] = var
-      elif ((isinstance(var, variables.Variable) or
-             isinstance(var, resource_variable_ops.ResourceVariable)) and
-            var._save_slice_info):
+      elif isinstance(var, variables.Variable) and var._save_slice_info:
         name = var._save_slice_info.full_name
         if name in names_to_saveables:
           if not isinstance(names_to_saveables[name], list):
@@ -573,8 +571,7 @@ class BaseSaverBuilder(object):
         slice_name = None
         # pylint: disable=protected-access
         for variable in op:
-          if (not isinstance(variable, variables.Variable) and
-              not isinstance(variable, resource_variable_ops.ResourceVariable)):
+          if not isinstance(variable, variables.Variable):
             raise ValueError("Slices must all be Variables: %s" % variable)
           if not variable._save_slice_info:
             raise ValueError("Slices must all be slices: %s" % variable)
@@ -935,11 +932,11 @@ def get_checkpoint_state(checkpoint_dir, latest_filename=None):
           ckpt.all_model_checkpoint_paths[i] = os.path.join(checkpoint_dir, p)
   except errors.OpError as e:
     # It's ok if the file cannot be read
-    logging.warning(str(e))
+    logging.warning("%s: %s", type(e).__name__, e)
     logging.warning("%s: Checkpoint ignored", coord_checkpoint_filename)
     return None
   except text_format.ParseError as e:
-    logging.warning(str(e))
+    logging.warning("%s: %s", type(e).__name__, e)
     logging.warning("%s: Checkpoint ignored", coord_checkpoint_filename)
     return None
   finally:
@@ -1461,28 +1458,31 @@ class Saver(object):
             "'latest_filename' collides with 'save_path': '%s' and '%s'" %
             (latest_filename, save_path))
 
-    if not gfile.IsDirectory(os.path.dirname(save_path)):
-      raise ValueError(
-          "Parent directory of {} doesn't exist, can't save.".format(save_path))
-
-    save_path = os.path.dirname(save_path)
     if not isinstance(sess, session.SessionInterface):
       raise TypeError("'sess' must be a Session; %s" % sess)
 
+    save_path_parent = os.path.dirname(save_path)
     if not self._is_empty:
-      model_checkpoint_path = sess.run(
-          self.saver_def.save_tensor_name,
-          {self.saver_def.filename_tensor_name: checkpoint_file})
-      model_checkpoint_path = compat.as_str(model_checkpoint_path)
-      if write_state:
-        self._MaybeDeleteOldCheckpoints(
-            model_checkpoint_path, meta_graph_suffix=meta_graph_suffix)
-        _update_checkpoint_state(
-            save_dir=save_path,
-            model_checkpoint_path=model_checkpoint_path,
-            all_model_checkpoint_paths=self.last_checkpoints,
-            latest_filename=latest_filename,
-            save_relative_paths=self._save_relative_paths)
+      try:
+        model_checkpoint_path = sess.run(
+            self.saver_def.save_tensor_name,
+            {self.saver_def.filename_tensor_name: checkpoint_file})
+        model_checkpoint_path = compat.as_str(model_checkpoint_path)
+        if write_state:
+          self._MaybeDeleteOldCheckpoints(
+              model_checkpoint_path, meta_graph_suffix=meta_graph_suffix)
+          _update_checkpoint_state(
+              save_dir=save_path_parent,
+              model_checkpoint_path=model_checkpoint_path,
+              all_model_checkpoint_paths=self.last_checkpoints,
+              latest_filename=latest_filename,
+              save_relative_paths=self._save_relative_paths)
+      except (errors.FailedPreconditionError, errors.NotFoundError) as exc:
+        if not gfile.IsDirectory(save_path_parent):
+          exc = ValueError(
+              "Parent directory of {} doesn't exist, can't save.".format(
+                  save_path))
+        raise exc
 
     if write_meta_graph:
       meta_graph_filename = self._MetaGraphFilename(
