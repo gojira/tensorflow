@@ -113,7 +113,38 @@ bool HloOrdering::ExecutesBefore(const HloInstruction* a,
   // a_ancestor and b_ancestor must be either both null or both non-null.
   CHECK_NE(b_ancestor, nullptr);
   CHECK_EQ(a_ancestor->parent(), b_ancestor->parent());
+
+  // If the common ancestor is a while instruction there is an additional
+  // ordering criteria which may apply. The condition computation is considered
+  // to execute before the body computation so if 'a' is in the condition and
+  // 'b' is in the body, then 'a' executes before 'b'.
+  if (a_ancestor == b_ancestor && a_ancestor->opcode() == HloOpcode::kWhile) {
+    const HloComputation* body = a_ancestor->while_body();
+    const HloComputation* condition = a_ancestor->while_condition();
+    if (call_graph_->InstructionIsNestedIn(a, condition) &&
+        call_graph_->InstructionIsNestedIn(b, body)) {
+      return true;
+    }
+  }
+
   return ExecutesBeforeInSameComputation(a_ancestor, b_ancestor);
+}
+
+HloOrderingProto HloOrdering::ToProto() const {
+  HloOrderingProto proto;
+  for (const auto& computation : module_->computations()) {
+    const std::vector<const HloInstruction*>* sequence =
+        SequentialOrder(*computation);
+    if (sequence != nullptr) {
+      HloOrderingProto::SequentialComputation* proto_computation =
+          proto.add_sequential_computations();
+      proto_computation->set_computation_name(computation->name());
+      for (const HloInstruction* instruction : *sequence) {
+        *proto_computation->add_instruction_names() = instruction->name();
+      }
+    }
+  }
+  return proto;
 }
 
 PredecessorHloOrdering::PredecessorHloOrdering(const HloModule* module)
@@ -343,7 +374,7 @@ class ListScheduler {
     return freed_bytes;
   }
 
-  // Construct the scheduling priority of the given instruciton.
+  // Construct the scheduling priority of the given instruction.
   Priority GetPriority(const HloInstruction* instruction) {
     return {BytesFreedIfScheduled(instruction), instruction->user_count()};
   }

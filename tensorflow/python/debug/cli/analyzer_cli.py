@@ -368,7 +368,7 @@ class DebugAnalyzer(object):
   def add_tensor_filter(self, filter_name, filter_callable):
     """Add a tensor filter.
 
-    A tensor filter is a named callable of the siganture:
+    A tensor filter is a named callable of the signature:
       filter_callable(dump_datum, tensor),
 
     wherein dump_datum is an instance of debug_data.DebugTensorDatum carrying
@@ -1312,7 +1312,7 @@ class DebugAnalyzer(object):
     all_inputs = copy.copy(tracker(node_name, is_control=False))
     is_ctrl = [False] * len(all_inputs)
     if include_control:
-      # Sort control inputs or recipients in in alphabetical order of the node
+      # Sort control inputs or recipients in alphabetical order of the node
       # names.
       ctrl_inputs = sorted(tracker(node_name, is_control=True))
       all_inputs.extend(ctrl_inputs)

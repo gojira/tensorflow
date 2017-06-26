@@ -29,9 +29,11 @@ import threading
 import numpy as np
 import six
 
+_portpicker_import_error = None
 try:
   import portpicker  # pylint: disable=g-import-not-at-top
-except ImportError as _portpicker_import_error:
+except ImportError as _error:
+  _portpicker_import_error = _error
   portpicker = None
 
 # pylint: disable=g-import-not-at-top
@@ -225,6 +227,31 @@ def NCHWToNHWC(input_tensor):
     return [input_tensor[a] for a in new_axes[ndims]]
 
 
+# TODO(skyewm): remove this eventually
+def disable_c_api(fn):
+  """Decorator for disabling the C API on a test.
+
+  Note this disables the C API after running the test class's setup/teardown
+  methods.
+
+  Args:
+    fn: the function to be wrapped
+
+  Returns:
+    The wrapped function
+  """
+  # pylint: disable=protected-access
+  def disable_c_api_wrapper(*args, **kwargs):
+    prev_value = ops._USE_C_API
+    ops._USE_C_API = False
+    try:
+      fn(*args, **kwargs)
+    finally:
+      ops._USE_C_API = prev_value
+  # pylint: disable=protected-access
+  return disable_c_api_wrapper
+
+
 class TensorFlowTestCase(googletest.TestCase):
   """Base class for tests that need to test TensorFlow.
   """
@@ -355,16 +382,17 @@ class TensorFlowTestCase(googletest.TestCase):
     `force_gpu and `use_gpu` are False, all ops are pinned to the CPU.
 
     Example:
-
-      class MyOperatorTest(test_util.TensorFlowTestCase):
-        def testMyOperator(self):
-          with self.test_session(use_gpu=True):
-            valid_input = [1.0, 2.0, 3.0, 4.0, 5.0]
-            result = MyOperator(valid_input).eval()
-            self.assertEqual(result, [1.0, 2.0, 3.0, 5.0, 8.0]
-            invalid_input = [-1.0, 2.0, 7.0]
-            with self.assertRaisesOpError("negative input not supported"):
-              MyOperator(invalid_input).eval()
+    ```python
+    class MyOperatorTest(test_util.TensorFlowTestCase):
+      def testMyOperator(self):
+        with self.test_session(use_gpu=True):
+          valid_input = [1.0, 2.0, 3.0, 4.0, 5.0]
+          result = MyOperator(valid_input).eval()
+          self.assertEqual(result, [1.0, 2.0, 3.0, 5.0, 8.0]
+          invalid_input = [-1.0, 2.0, 7.0]
+          with self.assertRaisesOpError("negative input not supported"):
+            MyOperator(invalid_input).eval()
+    ```
 
     Args:
       graph: Optional graph to use during the returned session.
@@ -820,8 +848,8 @@ def create_local_cluster(num_workers, num_ps, protocol="grpc"):
   Raises:
     ImportError: if portpicker module was not found at load time
   """
-  if not portpicker:
-    raise _portpicker_import_error
+  if _portpicker_import_error:
+    raise _portpicker_import_error  # pylint: disable=raising-bad-type
   worker_ports = [portpicker.pick_unused_port() for _ in range(num_workers)]
   ps_ports = [portpicker.pick_unused_port() for _ in range(num_ps)]
   cluster_dict = {

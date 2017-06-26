@@ -282,7 +282,7 @@ class _VariableStore(object):
 
     # If a *_ref type is passed in an error would be triggered further down the
     # stack. We prevent this using base_dtype to get a non-ref version of the
-    # type, before doing anything else. When _ref types are removed in favour of
+    # type, before doing anything else. When _ref types are removed in favor of
     # resources, this line can be removed.
     try:
       dtype = dtype.base_dtype
@@ -1500,6 +1500,11 @@ def variable_scope(name_or_scope,
 
   A note about name scoping: Setting `reuse` does not impact the naming of other
   ops such as mult. See related discussion on [github#6189](https://github.com/tensorflow/tensorflow/issues/6189)
+
+  Note that up to and including version 1.0, it was allowed (though
+  explicitly discouraged) to pass False to the reuse argument, yielding
+  undocumented behaviour slightly different from None. Starting at 1.1.0
+  passing None and False as reuse has exactly the same effect.
 
   Args:
     name_or_scope: `string` or `VariableScope`: the scope to open.
