@@ -44,7 +44,6 @@ from tensorflow.python.util.all_util import remove_undocumented
 from tensorflow.python.util.tf_export import tf_export
 
 
-@tf_export('compat.as_bytes', 'compat.as_str')
 def as_bytes(bytes_or_text, encoding='utf-8'):
   """Converts either bytes or unicode to `bytes`, using utf-8 encoding for text.
 
@@ -67,7 +66,6 @@ def as_bytes(bytes_or_text, encoding='utf-8'):
                     (bytes_or_text,))
 
 
-@tf_export('compat.as_text')
 def as_text(bytes_or_text, encoding='utf-8'):
   """Returns the given argument as a unicode string.
 
@@ -92,8 +90,12 @@ def as_text(bytes_or_text, encoding='utf-8'):
 # Convert an object to a `str` in both Python 2 and 3.
 if _six.PY2:
   as_str = as_bytes
+  tf_export('compat.as_bytes', 'compat.as_str')(as_bytes)
+  tf_export('compat.as_text')(as_text)
 else:
   as_str = as_text
+  tf_export('compat.as_bytes')(as_bytes)
+  tf_export('compat.as_text', 'compat.as_str')(as_text)
 
 
 @tf_export('compat.as_str_any')
@@ -112,6 +114,7 @@ def as_str_any(value):
     return str(value)
 
 
+@tf_export('compat.path_to_str')
 def path_to_str(path):
   """Returns the file system path representation of a `PathLike` object, else as it is.
 

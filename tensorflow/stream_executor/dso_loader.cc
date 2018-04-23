@@ -33,8 +33,11 @@ limitations under the License.
 #include "tensorflow/stream_executor/platform/logging.h"
 #include "tensorflow/stream_executor/platform/port.h"
 
-namespace perftools {
-namespace gputools {
+#if !defined(PLATFORM_GOOGLE)
+#include "cuda/cuda_config.h"
+#endif
+
+namespace stream_executor {
 namespace internal {
 
 string GetCudaVersion() { return TF_CUDA_VERSION; }
@@ -287,5 +290,4 @@ static std::vector<string>* CreatePrimordialRpaths() {
 }
 
 }  // namespace internal
-}  // namespace gputools
-}  // namespace perftools
+}  // namespace stream_executor
