@@ -39,6 +39,10 @@ constexpr TfLiteType typeToTfLiteType<int>() {
   return kTfLiteInt32;
 }
 template <>
+constexpr TfLiteType typeToTfLiteType<int16_t>() {
+  return kTfLiteInt16;
+}
+template <>
 constexpr TfLiteType typeToTfLiteType<int64_t>() {
   return kTfLiteInt64;
 }
@@ -118,6 +122,11 @@ class Interpreter {
   // interpreter.
   TfLiteStatus SetOutputs(std::vector<int> outputs);
 
+  // Provide a list of tensor indexes that are variable tensors.
+  // Each index is bound check and this modifies the consistent_ flag of the
+  // interpreter.
+  TfLiteStatus SetVariables(std::vector<int> variables);
+
   // Adds a node with the given parameters and returns the index of the new
   // node in `node_index` (optionally). Interpreter will take ownership of
   // `builtin_data` and destroy it with `free`. Ownership of 'init_data'
@@ -150,7 +159,7 @@ class Interpreter {
   };
 
   TfLiteStatus SetTensorParametersReadOnly(
-      int tensor_index, TfLiteType type, const char* name, const int rank,
+      int tensor_index, TfLiteType type, const char* name, const size_t rank,
       const int* dims, TfLiteQuantizationParams quantization,
       const char* buffer, size_t bytes, const Allocation* allocation = nullptr);
 
@@ -160,13 +169,15 @@ class Interpreter {
   // to Interpreter.
   inline TfLiteStatus SetTensorParametersReadWrite(
       int tensor_index, TfLiteType type, const char* name,
-      const std::vector<int>& dims, TfLiteQuantizationParams quantization) {
+      const std::vector<int>& dims, TfLiteQuantizationParams quantization,
+      bool is_variable = false) {
     return SetTensorParametersReadWrite(tensor_index, type, name, dims.size(),
-                                        dims.data(), quantization);
+                                        dims.data(), quantization, is_variable);
   }
   TfLiteStatus SetTensorParametersReadWrite(
-      int tensor_index, TfLiteType type, const char* name, const int rank,
-      const int* dims, TfLiteQuantizationParams quantization);
+      int tensor_index, TfLiteType type, const char* name, const size_t rank,
+      const int* dims, TfLiteQuantizationParams quantization,
+      bool is_variable = false);
 
   // Functions to access tensor data
 
@@ -182,6 +193,9 @@ class Interpreter {
   // Read only access to list of outputs.
   const std::vector<int>& outputs() const { return outputs_; }
 
+  // Read only access to list of variable tensors.
+  const std::vector<int>& variables() const { return variables_; }
+
   // Return the name of a given output. The given index must be between 0 and
   // outputs().size().
   const char* GetOutputName(int index) const {
@@ -189,10 +203,10 @@ class Interpreter {
   }
 
   // Return the number of tensors in the model.
-  int tensors_size() const { return context_.tensors_size; }
+  size_t tensors_size() const { return context_.tensors_size; }
 
   // Return the number of ops in the model.
-  int nodes_size() const { return nodes_and_registration_.size(); }
+  size_t nodes_size() const { return nodes_and_registration_.size(); }
 
   // WARNING: Experimental interface, subject to change
   const std::vector<int>& execution_plan() const { return execution_plan_; }
@@ -201,7 +215,7 @@ class Interpreter {
   // Overrides execution plan. This bounds checks indices sent in.
   TfLiteStatus SetExecutionPlan(const std::vector<int>& new_plan);
 
-  // Get a tensor data structure.
+  // Get a mutable tensor data structure.
   // TODO(aselle): Create a safe ArrayHandle interface to avoid exposing this
   // read/write access to structure
   TfLiteTensor* tensor(int tensor_index) {
@@ -210,9 +224,14 @@ class Interpreter {
     return &context_.tensors[tensor_index];
   }
 
+  // Get an immutable tensor data structure.
+  const TfLiteTensor* tensor(int tensor_index) const {
+    if (tensor_index >= context_.tensors_size || tensor_index < 0)
+      return nullptr;
+    return &context_.tensors[tensor_index];
+  }
+
   // Get a pointer to an operation and registration data structure if in bounds.
-  // TODO(aselle): Create a safe ArrayHandle interface to avoid exposing this
-  // read/write access to structure
   const std::pair<TfLiteNode, TfLiteRegistration>* node_and_registration(
       int node_index) const {
     if (node_index >= nodes_and_registration_.size() || node_index < 0)
@@ -220,7 +239,8 @@ class Interpreter {
     return &nodes_and_registration_[node_index];
   }
 
-  // Perform a checked cast to the appropriate tensor type.
+  // Perform a checked cast to the appropriate tensor type (mutable pointer
+  // version).
   template <class T>
   T* typed_tensor(int tensor_index) {
     if (TfLiteTensor* tensor_ptr = tensor(tensor_index)) {
@@ -231,17 +251,43 @@ class Interpreter {
     return nullptr;
   }
 
-  // Return a pointer into the data of a given input tensor. The given index
-  // must be between 0 and inputs().size().
+  // Perform a checked cast to the appropriate tensor type (immutable pointer
+  // version).
+  template <class T>
+  const T* typed_tensor(int tensor_index) const {
+    if (const TfLiteTensor* tensor_ptr = tensor(tensor_index)) {
+      if (tensor_ptr->type == typeToTfLiteType<T>()) {
+        return reinterpret_cast<const T*>(tensor_ptr->data.raw);
+      }
+    }
+    return nullptr;
+  }
+
+  // Return a mutable pointer into the data of a given input tensor. The given
+  // index must be between 0 and inputs().size().
   template <class T>
   T* typed_input_tensor(int index) {
     return typed_tensor<T>(inputs_[index]);
   }
 
-  // Return a pointer into the data of a given output tensor. The given index
-  // must be between 0 and outputs().size().
+  // Return an immutable pointer into the data of a given input tensor. The
+  // given index must be between 0 and inputs().size().
+  template <class T>
+  const T* typed_input_tensor(int index) const {
+    return typed_tensor<T>(inputs_[index]);
+  }
+
+  // Return a mutable pointer into the data of a given output tensor. The given
+  // index must be between 0 and outputs().size().
   template <class T>
   T* typed_output_tensor(int index) {
+    return typed_tensor<T>(outputs_[index]);
+  }
+
+  // Return an immutable pointer into the data of a given output tensor. The
+  // given index must be between 0 and outputs().size().
+  template <class T>
+  const T* typed_output_tensor(int index) const {
     return typed_tensor<T>(outputs_[index]);
   }
 
@@ -325,9 +371,7 @@ class Interpreter {
 
   void SetProfiler(profiling::Profiler* profiler) { profiler_ = profiler; }
 
-  profiling::Profiler* GetProfiler(profiling::Profiler* profiler) {
-    return profiler_;
-  }
+  profiling::Profiler* GetProfiler() { return profiler_; }
 
   // The default capacity of `tensors_` vector.
   static constexpr int kTensorsReservedCapacity = 128;
@@ -347,6 +391,17 @@ class Interpreter {
   // WARNING: This is an experimental API and subject to change.
   void SetAllowBufferHandleOutput(bool allow_buffer_handle_output) {
     allow_buffer_handle_output_ = allow_buffer_handle_output;
+  }
+
+  // Reset all variable tensors to zero.
+  // WARNING: This is an experimental API and subject to change.
+  TfLiteStatus ResetVariableTensorsToZero();
+
+  // Retrieve an operator's description of its work, for profiling purposes.
+  const char* OpProfilingString(const TfLiteRegistration& op_reg,
+                                const TfLiteNode* node) const {
+    if (op_reg.profiling_string == nullptr) return nullptr;
+    return op_reg.profiling_string(&context_, node);
   }
 
  private:
@@ -406,7 +461,7 @@ class Interpreter {
   // Compute the number of bytes required to represent a tensor with dimensions
   // specified by the array dims (of length dims_size). Returns the status code
   // and bytes.
-  TfLiteStatus BytesRequired(TfLiteType type, const int* dims, int dims_size,
+  TfLiteStatus BytesRequired(TfLiteType type, const int* dims, size_t dims_size,
                              size_t* bytes);
 
   // Request an tensor be resized implementation. If the given tensor is of
@@ -467,7 +522,7 @@ class Interpreter {
   // tensors. After calling this function, adding `kTensorsCapacityHeadroom`
   // more tensors won't invalidate the pointer to existing tensors.
   void EnsureTensorsVectorCapacity() {
-    const int required_capacity = tensors_size() + kTensorsCapacityHeadroom;
+    const size_t required_capacity = tensors_size() + kTensorsCapacityHeadroom;
     if (required_capacity > tensors_.capacity()) {
       tensors_.reserve(required_capacity);
       context_.tensors = tensors_.data();
@@ -511,6 +566,9 @@ class Interpreter {
   // interpreter.
   std::vector<int> outputs_;
 
+  // Array of indices representing the tensors that are variable tensors.
+  std::vector<int> variables_;
+
   // The error reporter delegate that tflite will forward queries errors to.
   ErrorReporter* error_reporter_;
 
@@ -541,6 +599,11 @@ class Interpreter {
   std::unique_ptr<MemoryPlanner> memory_planner_;
 
   bool allow_buffer_handle_output_ = false;
+
+  // Tracking bit for whether a tensor was resized in the course of an op
+  // invocation. This is a useful hint to ensure that dynamic tensor outputs
+  // trigger downstream reallocation after op invocation.
+  bool tensor_resized_since_op_invoke_ = false;
 
   // Profiler for this interpreter instance.
   profiling::Profiler* profiler_;
